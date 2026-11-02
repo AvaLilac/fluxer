@@ -164,10 +164,13 @@ export default defineConfig({
 					items: [
 						'operator',
 						'operator/running',
+						'operator/voice-servers',
 						'operator/reverse-proxy',
 						'operator/sign-in',
 						'operator/kubernetes',
 						'operator/docker-compose',
+						'operator/voice-compose',
+						'operator/environment',
 						'operator/rexctl',
 					],
 				},
@@ -334,6 +337,7 @@ export default defineConfig({
 		mdx(),
 	],
 	markdown: {
+		smartypants: false,
 		processor: unified({
 			rehypePlugins: [rehypeRootRelativeLinkPrefix(basePath), rehypeTableColumnWidths()],
 		}),

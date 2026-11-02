@@ -30,6 +30,7 @@ const DEFAULT_PASSKEY_ORIGINS = [
 	'https://fluxer.com',
 	'https://canary.fluxer.com',
 	'android:apk-key-hash:keSY4bimyLqZQV7bKXgpa2xYuqXi0qZJzsYtp6gpx7w',
+	'android:apk-key-hash:Ld4qnT0TfBeHMT3Yu2H0WTwqlxgFs-32uDmwqtLndsk',
 ];
 
 function defaultConfig(): MasterConfig {
@@ -112,6 +113,7 @@ function defaultConfig(): MasterConfig {
 				presigned_harvest_downloads_enabled: true,
 				unfurl_ignored_hosts: [],
 				app_origin_aliases: [],
+				discovery_public_endpoint: '',
 				storage_change_feed: {
 					enabled: false,
 					stream: 'STORAGE_CHANGES',
