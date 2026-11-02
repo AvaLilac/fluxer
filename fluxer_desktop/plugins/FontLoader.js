@@ -4,7 +4,7 @@
     window.__AVIA_WEB_LOADED__ = true;
 
     const LINKTREE_URL = "https://linktr.ee/GermanAvaLilac";
-    const FLUXER_SERVER_CODE = "6gdlFZkU";
+    const FLUXER_SERVER_CODE = "XFoJZsm2";
 
     function preloadMonaco() {
         return new Promise(resolve => {
