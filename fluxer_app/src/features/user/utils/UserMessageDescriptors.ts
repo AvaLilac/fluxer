@@ -315,7 +315,7 @@ export const ESCAPE_KEY_EXITS_KEYBOARD_MODE_DESCRIPTOR = msg({
 });
 
 export const SHOW_CONTEXT_MENU_SHORTCUTS_DESCRIPTOR = msg({
-	message: 'Show context menu shortcuts',
+	message: 'Show context menu keybinds',
 	comment: 'Settings search entry label. Names the settings search entry in the settings UI.',
 });
 
@@ -658,17 +658,17 @@ export const RESET_TO_DEFAULTS_DESCRIPTOR = msg({
 });
 
 export const SYNC_SHORTCUTS_DESCRIPTOR = msg({
-	message: 'Sync shortcuts',
+	message: 'Sync keybinds',
 	comment: 'Settings search synonym. Used to match this term when the user types it in the settings search bar.',
 });
 
 export const CUSTOM_SHORTCUTS_DESCRIPTOR = msg({
-	message: 'Custom shortcuts',
+	message: 'Custom keybinds',
 	comment: 'Settings search entry label. Also used as a search synonym in the settings search bar.',
 });
 
 export const DEFAULT_SHORTCUTS_DESCRIPTOR = msg({
-	message: 'Default shortcuts',
+	message: 'Default keybinds',
 	comment: 'Settings search entry label. Also used as a search synonym in the settings search bar.',
 });
 
@@ -770,4 +770,10 @@ export const STREAM_PREVIEW_DESCRIPTOR = msg({
 export const GIFTS_DESCRIPTOR = msg({
 	message: 'Gifts',
 	comment: 'Settings search entry label. Also used as a search synonym in the settings search bar.',
+});
+
+export const OPERATORS_MEMBERS_SEE_YOU_DESCRIPTOR = msg({
+	message: "People in #operators can see that you're in it.",
+	comment:
+		'Sentence after a note about how Fluxer Labs shows a person with a hidden Operator Pass or Visionary badge, and in the "Show #operators" setting. #operators is a channel name, keep it as is. Everyone who can open the channel sees who else is in it.',
 });

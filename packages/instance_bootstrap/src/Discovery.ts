@@ -27,6 +27,7 @@ import {
 	type InstanceBranding,
 	type InstanceBuiltInGuildBadgeImages,
 	type InstanceCommunity,
+	type InstanceConnectionProvider,
 	type InstanceDomainMigration,
 	type InstanceFeatures,
 	type InstanceGif,
@@ -94,6 +95,10 @@ const BRANDING_URL_KEYS = Object.freeze([
 	'status_page_incident_history_url',
 	'premium_info_url',
 	'sign_in_backdrop_url',
+	'premium_showcase_expressions_url',
+	'premium_showcase_profile_url',
+	'premium_showcase_stream_url',
+	'premium_showcase_upload_url',
 ] as const) satisfies ReadonlyArray<keyof InstanceBranding>;
 
 const SETUP_FLAG_KEYS = Object.freeze([
@@ -113,6 +118,7 @@ interface InstanceDiscoveryEndpoints {
 	readonly gateway: string;
 	readonly api_client: string | null;
 	readonly api_public: string | null;
+	readonly api_transport: string | null;
 	readonly media: string | null;
 	readonly upload_relay: string | null;
 	readonly static_cdn: string | null;
@@ -543,6 +549,7 @@ function parseEndpoints(value: unknown): InstanceDiscoveryEndpoints {
 		gateway,
 		api_client: normalizeInstanceEndpoint(source.api_client, InstanceEndpointKind.SERVICE),
 		api_public: normalizeInstanceEndpoint(source.api_public, InstanceEndpointKind.SERVICE),
+		api_transport: normalizeInstanceEndpoint(source.api_transport, InstanceEndpointKind.SERVICE),
 		media: normalizeInstanceEndpoint(source.media, InstanceEndpointKind.SERVICE),
 		upload_relay: normalizeInstanceEndpoint(source.upload_relay, InstanceEndpointKind.SERVICE),
 		static_cdn: normalizeInstanceEndpoint(source.static_cdn, InstanceEndpointKind.SERVICE),
@@ -736,7 +743,7 @@ function parseGuildBadges(value: unknown): Array<InstanceGuildBadge> {
 		const id = readNonEmptyString(source, 'id');
 		const name = readNonEmptyString(source, 'name');
 		const assetUrl = readNonEmptyString(source, 'asset_url');
-		if (id == null || name == null || assetUrl == null) {
+		if (id == null || !/^\d{1,20}$/.test(id) || name == null || assetUrl == null) {
 			return [];
 		}
 		const position = readNonEmptyString(source, 'position');
@@ -764,7 +771,27 @@ function parseServices(value: unknown): InstanceServices | null {
 	if (gifEnabled == null || youtubeEnabled == null || blueskyEnabled == null) {
 		return null;
 	}
-	return {gif_enabled: gifEnabled, youtube_enabled: youtubeEnabled, bluesky_enabled: blueskyEnabled};
+	return {
+		gif_enabled: gifEnabled,
+		youtube_enabled: youtubeEnabled,
+		bluesky_enabled: blueskyEnabled,
+		connection_providers: parseConnectionProviders(source['connection_providers']),
+	};
+}
+
+function parseConnectionProviders(value: unknown): Array<InstanceConnectionProvider> {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	return value.flatMap((entry): Array<InstanceConnectionProvider> => {
+		const source = asRecord(entry);
+		const id = source == null ? null : readNonEmptyString(source, 'id');
+		const name = source == null ? null : readNonEmptyString(source, 'name');
+		if (source == null || id == null || name == null) {
+			return [];
+		}
+		return [{id, name, icon_url: readAbsoluteHTTPURL(source, 'icon_url')}];
+	});
 }
 
 function parseLimits(value: unknown): LimitConfigSnapshot | LimitConfigWireFormat | null {
@@ -919,6 +946,9 @@ function parseBranding(value: unknown): Readonly<Partial<InstanceBranding>> {
 	}
 	if (Object.hasOwn(source, 'theme_color')) {
 		branding.theme_color = readNonEmptyString(source, 'theme_color');
+	}
+	if (Object.hasOwn(source, 'premium_page_color')) {
+		branding.premium_page_color = readNonEmptyString(source, 'premium_page_color');
 	}
 	if (Object.hasOwn(source, 'custom_css')) {
 		branding.custom_css = readNonEmptyString(source, 'custom_css');

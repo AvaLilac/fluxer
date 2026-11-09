@@ -38,6 +38,7 @@ use serde::Deserialize;
 mod accounts;
 mod app_public;
 mod branding_assets;
+mod connection_providers;
 mod experiments;
 mod integrations;
 mod notices;
@@ -208,6 +209,9 @@ pub async fn instance_config_post(
         }
         let update = match action {
             "update_sso" => sso::build_sso_update(&form).map_err(FlashData::error),
+            "update_connection_providers" => Ok(
+                connection_providers::build_connection_providers_update(&form),
+            ),
             "update_gateway_rollout" => Ok(build_gateway_rollout_update(&form)),
             "update_registration" => Ok(build_registration_update(&form)),
             "update_app_public" => app_public::build_app_public_update(&form),
@@ -216,6 +220,10 @@ pub async fn instance_config_post(
             "update_media" => Ok(build_media_update(&form)),
             "update_billing" => {
                 super::billing_actions::build_billing_update(&form).map_err(FlashData::error)
+            }
+            "update_distribution_pricing" => {
+                super::billing_actions::build_distribution_pricing_update(&form)
+                    .map_err(FlashData::error)
             }
             "update_push_relay" => Ok(build_push_relay_update(&form)),
             "update_domain_migration" => {

@@ -39,6 +39,7 @@ import {
 	mapGuildToGuildResponse,
 } from '@app/api/guild/GuildModel';
 import type {GuildRepository} from '@app/api/guild/repositories/GuildRepository';
+import {GuildMemberSearchIndexService} from '@app/api/guild/services/member/GuildMemberSearchIndexService';
 import {enqueueEndGuildVisitsForCode} from '@app/api/guild/visits/GuildVisitLifecycle';
 import {resolveSessionGuildVisits} from '@app/api/guild/visits/GuildVisitSession';
 import {stripAnimationPrefix} from '@app/api/infrastructure/AssetEntitlementUtils';
@@ -272,13 +273,6 @@ export class RpcService {
 		await ensurePersonalNotesChannelExists({channelRepository: this.channelRepository.channelData, userId: user.id});
 	}
 
-	private async updateGuildMemberCount(guild: Guild, actualMemberCount: number): Promise<Guild> {
-		if (guild.memberCount === actualMemberCount) {
-			return guild;
-		}
-		return await this.guildRepository.upsertPartial(guild.id, {member_count: actualMemberCount}, guild.toRow());
-	}
-
 	private async migrateStickerAnimated(sticker: GuildSticker): Promise<GuildSticker> {
 		if (sticker.animated !== null && sticker.animated !== undefined) {
 			return sticker;
@@ -406,6 +400,11 @@ export class RpcService {
 						userIds: request.user_ids.map(createUserID),
 					}),
 				};
+			case 'get_users_adult_content_allowed':
+				return {
+					type: 'get_users_adult_content_allowed',
+					data: {user_ids: await this.getUsersAdultContentAllowed(request.user_ids.map(createUserID))},
+				};
 			case 'voice_get_token': {
 				Logger.debug(
 					{type: 'voice_get_token', guildId: request.guild_id, channelId: request.channel_id, userId: request.user_id},
@@ -462,15 +461,15 @@ export class RpcService {
 				};
 			}
 			case 'voice_update_participant_permissions': {
-				await this.requireVoiceService().updateParticipantPermissions({
+				await this.requireVoiceService().updateConnectionPermissions({
 					guildId: request.guild_id !== undefined ? createGuildID(request.guild_id) : undefined,
 					channelId: createChannelID(request.channel_id),
 					userId: createUserID(request.user_id),
 					connectionId: request.connection_id,
+					deaf: request.deaf,
 					canSpeak: request.can_speak,
 					canStream: request.can_stream,
 					canVideo: request.can_video,
-					deaf: request.deaf,
 				});
 				return {
 					type: 'voice_update_participant_permissions',
@@ -1262,8 +1261,7 @@ export class RpcService {
 	}): Promise<RpcResponseGuildCollectionData> {
 		const guild = await this.getGuildOrThrow(guildId);
 		await this.ensureThreadPermissionsSeeded(guildId);
-		const memberCount = await this.guildRepository.countMembers(guildId);
-		const repairedMemberCountGuild = await this.updateGuildMemberCount(guild, memberCount);
+		const repairedMemberCountGuild = (await this.guildRepository.syncMemberCount(guildId)) ?? guild;
 
 		const repairedBannerGuild = await this.repairGuildAssetDimensions(
 			repairedMemberCountGuild,
@@ -1629,7 +1627,10 @@ export class RpcService {
 			const needsIncomingCallRepair = settings.incomingCallFlags === 0;
 			const needsGroupDmRepair = settings.groupDmAddPermissionFlags === 0;
 			if (needsIncomingCallRepair || needsGroupDmRepair) {
-				const isAdult = canUserAccessNsfwContent({isBot: false, dateOfBirth: user.dateOfBirth});
+				const isAdult = canUserAccessNsfwContent({
+					isBot: false,
+					dateOfBirth: user.dateOfBirth,
+				});
 				const baseRow = settings.toRow();
 				const updatedRow = {
 					...baseRow,
@@ -1954,6 +1955,11 @@ export class RpcService {
 		return result;
 	}
 
+	private async getUsersAdultContentAllowed(userIds: Array<UserID>): Promise<Array<string>> {
+		const users = await this.userRepository.listUsers(userIds);
+		return users.filter((user) => canUserAccessNsfwContent(user)).map((user) => user.id.toString());
+	}
+
 	private async kickTemporaryMember(params: {userId: UserID; guildIds: Array<GuildID>}): Promise<boolean> {
 		const {userId, guildIds} = params;
 		try {
@@ -1966,7 +1972,8 @@ export class RpcService {
 						]);
 						if (member?.isTemporary && guild) {
 							await this.guildRepository.deleteMember(guildId, userId);
-							await this.updateGuildMemberCount(guild, Math.max(0, guild.memberCount - 1));
+							await new GuildMemberSearchIndexService().deleteMember(guildId, userId);
+							await this.guildRepository.syncMemberCount(guildId);
 							await this.gatewayService.dispatchGuild({
 								guildId,
 								event: 'GUILD_MEMBER_REMOVE',

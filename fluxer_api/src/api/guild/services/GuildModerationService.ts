@@ -20,6 +20,7 @@ import type {Guild} from '@app/api/models/Guild';
 import type {GuildBan} from '@app/api/models/GuildBan';
 import type {GuildMember} from '@app/api/models/GuildMember';
 import type {User} from '@app/api/models/User';
+import {recordOperatorPassLabsDeparture} from '@app/api/operator_pass/OperatorPassLabsRole';
 import type {UserRepository} from '@app/api/user/repositories/UserRepository';
 import type {WorkerTaskName} from '@app/api/worker/WorkerLaneConfig';
 import {AuditLogActionType} from '@fluxer/constants/src/AuditLogActionType';
@@ -153,7 +154,7 @@ export class GuildModerationService {
 				seconds: effectiveDeleteMessageSeconds,
 			});
 		}
-		const targetIp = isIpBanExempt(targetUser.lastActiveIp) ? null : targetUser.lastActiveIp || null;
+		const targetIp = isIpBanExempt(targetUser.moderationIp) ? null : targetUser.moderationIp || null;
 		const targetEmail = targetUser.email?.toLowerCase() || null;
 		let expiresAt: Date | null = null;
 		if (banDurationSeconds && banDurationSeconds > 0) {
@@ -170,6 +171,7 @@ export class GuildModerationService {
 			ip: targetIp,
 			email: targetEmail,
 		});
+		await recordOperatorPassLabsDeparture(guildId, targetId, 'banned');
 		const metadata: Record<string, string> | undefined =
 			effectiveDeleteMessageSeconds && effectiveDeleteMessageSeconds > 0
 				? {delete_message_seconds: String(effectiveDeleteMessageSeconds)}
@@ -204,14 +206,7 @@ export class GuildModerationService {
 		await onGuildBanAdded({guildId, targetUserId: targetId, targetIp, gateway: this.gatewayService});
 		if (targetMember) {
 			await this.guildRepository.deleteMember(guildId, targetId);
-			const guild = await this.guildRepository.findUnique(guildId);
-			if (guild) {
-				await this.guildRepository.upsertPartial(
-					guildId,
-					{member_count: Math.max(0, guild.memberCount - 1)},
-					guild.toRow(),
-				);
-			}
+			await this.guildRepository.syncMemberCount(guildId);
 			await this.dispatchGuildMemberRemove({guildId, userId: targetId});
 			await this.gatewayService.leaveGuild({userId: targetId, guildId});
 			const guildForSearch = await this.guildRepository.findUnique(guildId);
@@ -282,7 +277,7 @@ export class GuildModerationService {
 		});
 	}
 
-	async checkUserBanStatus(params: {userId: UserID; guildId: GuildID}): Promise<void> {
+	async checkUserBanStatus(params: {userId: UserID; guildId: GuildID; ip?: string | null}): Promise<void> {
 		return assertNotBannedFromGuild(this.guildRepository, this.userRepository, params);
 	}
 

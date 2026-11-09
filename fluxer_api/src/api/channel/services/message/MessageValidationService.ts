@@ -4,6 +4,7 @@ import type {UserID} from '@app/api/BrandedTypes';
 import type {MessageRequest, MessageUpdateRequest} from '@app/api/channel/MessageTypes';
 import {assertAttachmentFileSizesWithinLimit} from '@app/api/channel/services/message/MessageHelpers';
 import {contentModerationService} from '@app/api/infrastructure/ContentModerationService';
+import {resolveAttachmentMaxFileSize} from '@app/api/limits/AttachmentFileSizeLimit';
 import type {LimitConfigService} from '@app/api/limits/LimitConfigService';
 import {resolveLimitSafe} from '@app/api/limits/LimitConfigUtils';
 import {createLimitMatchContext} from '@app/api/limits/LimitMatchContextBuilder';
@@ -17,7 +18,6 @@ import {
 	SENDABLE_MESSAGE_FLAGS,
 } from '@fluxer/constants/src/ChannelConstants';
 import {
-	ATTACHMENT_MAX_SIZE_NON_PREMIUM,
 	MAX_ATTACHMENTS_PER_MESSAGE,
 	MAX_EMBEDS_PER_MESSAGE,
 	MAX_MESSAGE_LENGTH_NON_PREMIUM,
@@ -80,16 +80,39 @@ export class MessageValidationService {
 				if (embed.url) contentModerationService.scanUrl(embed.url, modCtx);
 				contentModerationService.scanText(embed.title ?? null, modCtx);
 				contentModerationService.scanText(embed.description ?? null, modCtx);
-				if (embed.footer) contentModerationService.scanText(embed.footer.text ?? null, modCtx);
+				if (embed.footer) {
+					contentModerationService.scanText(embed.footer.text ?? null, modCtx);
+					if (embed.footer.icon_url) contentModerationService.scanUrl(embed.footer.icon_url, modCtx);
+				}
 				if (embed.author) {
 					contentModerationService.scanText(embed.author.name ?? null, modCtx);
 					if (embed.author.url) contentModerationService.scanUrl(embed.author.url, modCtx);
+					if (embed.author.icon_url) contentModerationService.scanUrl(embed.author.icon_url, modCtx);
+				}
+				for (const media of [embed.image, embed.thumbnail]) {
+					if (!media) continue;
+					contentModerationService.scanUrl(media.url, modCtx);
+					contentModerationService.scanText(media.description ?? null, modCtx);
 				}
 				if (embed.fields) {
 					for (const field of embed.fields) {
 						contentModerationService.scanText(field.name ?? null, modCtx);
 						contentModerationService.scanText(field.value ?? null, modCtx);
 					}
+				}
+			}
+		}
+		if (data.attachments) {
+			for (const attachment of data.attachments) {
+				contentModerationService.scanText(attachment.title ?? null, modCtx);
+				contentModerationService.scanText(attachment.description ?? null, modCtx);
+			}
+		}
+		if ('message_snapshots' in data && data.message_snapshots) {
+			for (const snapshot of data.message_snapshots) {
+				for (const attachment of snapshot.attachments ?? []) {
+					contentModerationService.scanText(attachment.title ?? null, modCtx);
+					contentModerationService.scanText(attachment.description ?? null, modCtx);
 				}
 			}
 		}
@@ -161,18 +184,10 @@ export class MessageValidationService {
 		user: User,
 		guildFeatures?: Iterable<string> | null,
 	): void {
-		const ctx = createLimitMatchContext({user, guildFeatures});
-		const evaluationContext = guildFeatures ? 'guild' : 'user';
-		const fallbackMaxSize = ATTACHMENT_MAX_SIZE_NON_PREMIUM;
-		const maxFileSize = Math.floor(
-			resolveLimitSafe(
-				this.limitConfigService.getConfigSnapshot(),
-				ctx,
-				'max_attachment_file_size',
-				fallbackMaxSize,
-				evaluationContext,
-			),
-		);
+		const maxFileSize = resolveAttachmentMaxFileSize(this.limitConfigService.getConfigSnapshot(), {
+			user,
+			guildFeatures,
+		});
 		assertAttachmentFileSizesWithinLimit(
 			attachments.map(({size}) => size),
 			maxFileSize,

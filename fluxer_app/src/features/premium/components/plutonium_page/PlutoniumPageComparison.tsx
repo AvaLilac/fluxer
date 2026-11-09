@@ -4,6 +4,7 @@ import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
 import {Limits} from '@app/features/app/utils/UserLimits';
 import {AVAILABLE_DESCRIPTOR} from '@app/features/i18n/utils/CommonMessageDescriptors';
 import {formatNumber} from '@app/features/i18n/utils/IntlCache';
+import {formatFileSize} from '@app/features/messaging/utils/FileUtils';
 import styles from '@app/features/premium/components/plutonium_page/PlutoniumPage.module.css';
 import {
 	PlutoniumPageIcon,
@@ -33,8 +34,9 @@ import {
 	PERK_VIDEO_QUALITY_PREMIUM_DESCRIPTOR,
 	TAG_FOOTNOTE_MARKER_DESCRIPTOR,
 } from '@app/features/premium/components/plutonium_page/PlutoniumPageMessages';
-import {getPremiumProductName} from '@app/features/premium/utils/PremiumUtils';
+import {getPremiumProductName, shouldShowFluxerPremiumIcon} from '@app/features/premium/utils/PremiumUtils';
 import FocusRing from '@app/features/ui/focus_ring/FocusRing';
+import {ATTACHMENT_MAX_SIZE_NON_PREMIUM, ATTACHMENT_MAX_SIZE_PREMIUM} from '@fluxer/constants/src/LimitConstants';
 import {
 	isBooleanTierPerk,
 	isNumericTierPerk,
@@ -43,6 +45,7 @@ import {
 } from '@fluxer/constants/src/LimitTierPerks';
 import type {MessageDescriptor} from '@lingui/core';
 import {useLingui} from '@lingui/react/macro';
+import {CrownIcon} from '@phosphor-icons/react';
 import {clsx} from 'clsx';
 import {observer} from 'mobx-react-lite';
 import type React from 'react';
@@ -81,25 +84,17 @@ const PERK_DEFINITIONS: ReadonlyArray<PerkDefinition> = [
 	{perkId: 'custom_themes', icon: 'palette', label: PERK_CUSTOM_THEMES_DESCRIPTOR},
 ];
 
-const BYTES_PER_MEGABYTE = 1024 * 1024;
-
-function formatMegabytes(locale: string, bytes: number): string {
-	return new Intl.NumberFormat(locale, {style: 'unit', unit: 'megabyte', unitDisplay: 'short'}).format(
-		Math.floor(bytes / BYTES_PER_MEGABYTE),
-	);
-}
-
 export function resolveUploadSizes(locale: string): {free: string; premium: string} {
 	const perk = LIMIT_TIER_PERKS.find((candidate) => candidate.id === 'max_attachment_file_size');
 	if (!perk || !isNumericTierPerk(perk) || !perk.limitKey) {
 		return {
-			free: formatMegabytes(locale, 25 * BYTES_PER_MEGABYTE),
-			premium: formatMegabytes(locale, 500 * BYTES_PER_MEGABYTE),
+			free: formatFileSize(locale, ATTACHMENT_MAX_SIZE_NON_PREMIUM),
+			premium: formatFileSize(locale, ATTACHMENT_MAX_SIZE_PREMIUM),
 		};
 	}
 	return {
-		free: formatMegabytes(locale, Limits.getRestrictedValue(perk.limitKey, perk.restrictedValue)),
-		premium: formatMegabytes(locale, Limits.getStockValue(perk.limitKey, perk.stockValue)),
+		free: formatFileSize(locale, Limits.getRestrictedValue(perk.limitKey, perk.restrictedValue)),
+		premium: formatFileSize(locale, Limits.getStockValue(perk.limitKey, perk.stockValue)),
 	};
 }
 
@@ -110,7 +105,7 @@ function resolveNumericValue(perk: NumericTierPerk, value: number, tier: 'free' 
 			tier === 'premium' ? Limits.getStockValue(perk.limitKey, value) : Limits.getRestrictedValue(perk.limitKey, value);
 	}
 	if (perk.unit === 'bytes') {
-		return formatMegabytes(locale, resolved);
+		return formatFileSize(locale, resolved);
 	}
 	return formatNumber(resolved, locale);
 }
@@ -219,6 +214,21 @@ export const PlutoniumPageComparison = observer(
 		const {i18n} = useLingui();
 		const rows = buildRows(i18n.locale, (descriptor) => i18n._(descriptor));
 		const premiumLabel = getPremiumProductName();
+		const showFluxerPremiumIcon = shouldShowFluxerPremiumIcon();
+		const renderPerkIcon = (row: PerkRow, className: string) =>
+			row.icon === 'atom' && !showFluxerPremiumIcon ? (
+				<CrownIcon
+					weight="fill"
+					className={className}
+					data-flx="premium.plutonium-page.plutonium-page-comparison.perk-icon.crown-icon"
+				/>
+			) : (
+				<PlutoniumPageIcon
+					name={row.icon}
+					className={className}
+					data-flx="premium.plutonium-page.plutonium-page-comparison.perk-icon"
+				/>
+			);
 		const renderLabel = (row: PerkRow) => (
 			<>
 				<span data-flx="premium.plutonium-page.plutonium-page-comparison.render-label.span">{i18n._(row.label)}</span>
@@ -264,11 +274,7 @@ export const PlutoniumPageComparison = observer(
 								className={styles.perkCardHead}
 								data-flx="premium.plutonium-page.plutonium-page-comparison.perk-card-head"
 							>
-								<PlutoniumPageIcon
-									name={row.icon}
-									className={styles.perkCardIcon}
-									data-flx="premium.plutonium-page.plutonium-page-comparison.perk-card-icon"
-								/>
+								{renderPerkIcon(row, styles.perkCardIcon)}
 								<span
 									className={styles.perkCardLabel}
 									data-flx="premium.plutonium-page.plutonium-page-comparison.perk-card-label"
@@ -367,11 +373,7 @@ export const PlutoniumPageComparison = observer(
 												className={styles.tableRowLabel}
 												data-flx="premium.plutonium-page.plutonium-page-comparison.table-row-label"
 											>
-												<PlutoniumPageIcon
-													name={row.icon}
-													className={styles.tableRowIcon}
-													data-flx="premium.plutonium-page.plutonium-page-comparison.table-row-icon"
-												/>
+												{renderPerkIcon(row, styles.tableRowIcon)}
 												<span data-flx="premium.plutonium-page.plutonium-page-comparison.span">{renderLabel(row)}</span>
 											</span>
 										</th>

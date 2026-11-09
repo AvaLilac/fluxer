@@ -51,9 +51,12 @@ const convertDescriptorList = (
 		transports: descriptor.transports,
 	}));
 const convertRequestOptions = (options: PublicKeyCredentialRequestOptionsJSON): NativeRequestOptionsWithoutOrigin => ({
-	...options,
-	challenge: base64UrlToBuffer(options.challenge),
 	allowCredentials: convertDescriptorList(options.allowCredentials),
+	challenge: base64UrlToBuffer(options.challenge),
+	extensions: options.extensions,
+	rpId: options.rpId,
+	timeout: options.timeout,
+	userVerification: options.userVerification,
 });
 const convertCreationOptions = (
 	options: PublicKeyCredentialCreationOptionsJSON,
@@ -166,6 +169,26 @@ const requireOrigin = (origin: string | undefined): string => {
 	return origin;
 };
 
+const isRpIdAllowedForOrigin = (rpId: string, origin: string): boolean => {
+	const hostname = new URL(origin).hostname.toLowerCase();
+	const normalizedRpId = rpId.toLowerCase();
+	if (hostname === normalizedRpId) {
+		return true;
+	}
+	if (normalizedRpId.includes('.') && hostname.endsWith(`.${normalizedRpId}`)) {
+		return true;
+	}
+	return isOfficialInstanceHost(origin) && isOfficialInstanceHost(`https://${normalizedRpId}`);
+};
+
+const requireOriginForRpId = (origin: string | undefined, rpId: string | undefined): string => {
+	const ceremonyOrigin = requireOrigin(origin);
+	if (rpId && !isRpIdAllowedForOrigin(rpId, ceremonyOrigin)) {
+		throw new Error(`Relying party ID ${rpId} is not valid for origin ${ceremonyOrigin}`);
+	}
+	return ceremonyOrigin;
+};
+
 function loadFluxerWebAuthnAddon(): NativeWebAuthnAddon | null {
 	try {
 		const addon = requireModule('@fluxer/webauthn') as NativeWebAuthnAddon;
@@ -195,7 +218,7 @@ function createNativePasskeyProviderForAddon(addon: NativeWebAuthnAddon, include
 			const requestOptions = convertRequestOptions(options);
 			const credential = await addon.get({
 				...requestOptions,
-				origin: includeOrigin ? requireOrigin(context.origin) : '',
+				origin: includeOrigin ? requireOriginForRpId(context.origin, options.rpId) : '',
 				windowHandle: context.windowHandle,
 				pin: context.pin,
 			});
@@ -205,7 +228,7 @@ function createNativePasskeyProviderForAddon(addon: NativeWebAuthnAddon, include
 			const creationOptions = convertCreationOptions(options);
 			const credential = await addon.create({
 				...creationOptions,
-				origin: includeOrigin ? requireOrigin(context.origin) : '',
+				origin: includeOrigin ? requireOriginForRpId(context.origin, options.rp?.id) : '',
 				windowHandle: context.windowHandle,
 				pin: context.pin,
 			});
@@ -289,6 +312,7 @@ const NOT_ALLOWED_NATIVE_ERRORS = [
 	/\bTimeout \(/u,
 	/\(0x(?:80090036|800704C7|800705B4|80090035|80090011)\)/iu,
 ];
+const NO_AUTHENTICATOR_NATIVE_ERROR = /\bNoAuthenticator \(/u;
 const INVALID_STATE_NATIVE_ERRORS = [
 	/\(com\.apple\.AuthenticationServices\.AuthorizationError 1006\)/u,
 	/\(0x8009000F\)/iu,
@@ -300,6 +324,9 @@ const webAuthnErrorName = (message: string): string | null => {
 	}
 	if (INVALID_STATE_NATIVE_ERRORS.some((pattern) => pattern.test(message))) {
 		return 'InvalidStateError';
+	}
+	if (NO_AUTHENTICATOR_NATIVE_ERROR.test(message)) {
+		return 'NoAuthenticatorError';
 	}
 	return null;
 };

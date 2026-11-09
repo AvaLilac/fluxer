@@ -19,6 +19,7 @@ import {StreamService} from '@app/api/channel/services/StreamService';
 import {ThreadService} from '@app/api/channel/services/thread/ThreadService';
 import {ConnectionRequestService} from '@app/api/connection/ConnectionRequestService';
 import {ConnectionService} from '@app/api/connection/ConnectionService';
+import {OAuthConnectionService} from '@app/api/connection/OAuthConnectionService';
 import {DonationService} from '@app/api/donation/DonationService';
 import {DonationCheckoutService} from '@app/api/donation/services/DonationCheckoutService';
 import {DonationMagicLinkService} from '@app/api/donation/services/DonationMagicLinkService';
@@ -96,7 +97,6 @@ import {
 	getOAuth2TokenRepository,
 	getOperatorPassEntitlementService,
 	getOperatorPassRepository,
-	getOperatorPassWaitlistService,
 	getPasswordChangeRepository,
 	getPremiumStateReconciliationQueueService,
 	getPurgeQueue,
@@ -106,6 +106,7 @@ import {
 	getReportRepository,
 	getStorageService,
 	getStoreBillingRepository,
+	getStoredSecretVerifier,
 	getStreamPreviewService,
 	getSweegoWebhookService,
 	getThemeService,
@@ -124,7 +125,6 @@ import {OAuth2RequestService} from '@app/api/oauth/OAuth2RequestService';
 import {OAuth2Service} from '@app/api/oauth/OAuth2Service';
 import {OperatorPassCheckoutService} from '@app/api/operator_pass/OperatorPassCheckoutService';
 import type {OperatorPassEntitlementService} from '@app/api/operator_pass/OperatorPassEntitlementService';
-import type {OperatorPassWaitlistService} from '@app/api/operator_pass/OperatorPassWaitlistService';
 import {ReportRequestService} from '@app/api/report/ReportRequestService';
 import {ReportService} from '@app/api/report/ReportService';
 import {RpcService} from '@app/api/rpc/RpcService';
@@ -229,6 +229,7 @@ class RequestServices implements RequestScopedServices {
 	private cachedMessageRequestService: MessageRequestService | undefined;
 	private cachedConnectionService: ConnectionService | undefined;
 	private cachedConnectionRequestService: ConnectionRequestService | undefined;
+	private cachedOAuthConnectionService: OAuthConnectionService | undefined;
 	private cachedStreamService: StreamService | undefined;
 	private cachedFavoriteMemeService: FavoriteMemeService | undefined;
 	private cachedFavoriteMemeRequestService: FavoriteMemeRequestService | undefined;
@@ -521,6 +522,7 @@ class RequestServices implements RequestScopedServices {
 			this.stripeService.getStripe(),
 			new JobLedgerRepository(),
 			this.storeEntitlementService,
+			this.stripeService.operatorPassFulfilment,
 		);
 		return this.cachedAdminService;
 	}
@@ -532,6 +534,7 @@ class RequestServices implements RequestScopedServices {
 			entityAssetService: getEntityAssetService(),
 			discriminatorService: getDiscriminatorService(),
 			botAuthService: getBotAuthService(),
+			guildRepository: getGuildRepository(),
 		});
 		return this.cachedApplicationService;
 	}
@@ -659,6 +662,15 @@ class RequestServices implements RequestScopedServices {
 		return this.cachedConnectionRequestService;
 	}
 
+	get oauthConnectionService(): OAuthConnectionService {
+		this.cachedOAuthConnectionService ??= new OAuthConnectionService(
+			this.context,
+			getInstanceConfigRepository(),
+			this.connectionService,
+		);
+		return this.cachedOAuthConnectionService;
+	}
+
 	get streamService(): StreamService {
 		this.cachedStreamService ??= new StreamService(
 			getCacheService(),
@@ -717,6 +729,7 @@ class RequestServices implements RequestScopedServices {
 		this.cachedOAuth2Service ??= new OAuth2Service(this.context, {
 			applicationRepository: getApplicationRepository(),
 			oauth2TokenRepository: getOAuth2TokenRepository(),
+			storedSecrets: getStoredSecretVerifier(),
 		});
 		return this.cachedOAuth2Service;
 	}
@@ -798,6 +811,8 @@ class RequestServices implements RequestScopedServices {
 			userRepository: getUserRepository(),
 			guildRepository: getGuildRepository(),
 			guildService: this.guildService,
+			channelRepository: getChannelRepository(),
+			channelService: this.channelService,
 			get emailService() {
 				return getEmailService();
 			},
@@ -855,13 +870,6 @@ class RequestServices implements RequestScopedServices {
 		return getOperatorPassEntitlementService();
 	}
 
-	get operatorPassWaitlistService(): OperatorPassWaitlistService | undefined {
-		if (Config.instance.selfHosted) {
-			return undefined;
-		}
-		return getOperatorPassWaitlistService();
-	}
-
 	get operatorPassCheckoutService(): OperatorPassCheckoutService | undefined {
 		if (Config.instance.selfHosted) {
 			return undefined;
@@ -870,7 +878,6 @@ class RequestServices implements RequestScopedServices {
 			this.stripeService.getStripe(),
 			getOperatorPassRepository(),
 			getOperatorPassEntitlementService(),
-			getDonationRepository(),
 		);
 		return this.cachedOperatorPassCheckoutService;
 	}
@@ -906,6 +913,7 @@ class RequestServices implements RequestScopedServices {
 				getUserCacheService(),
 				getGatewayService(),
 				Config.instance.selfHosted ? null : getOperatorPassEntitlementService(),
+				Config.instance.selfHosted ? null : this.operatorPassServices.roleService,
 			);
 		}
 		return this.cachedUserAccountRequestService;

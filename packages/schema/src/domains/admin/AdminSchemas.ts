@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {MAX_CONNECTION_PROVIDERS} from '@fluxer/constants/src/ConnectionConstants';
 import {
 	GIFT_CODE_DURATION_TYPE_DEFINITIONS,
 	MAX_GIFT_CODES_PER_REQUEST,
@@ -47,8 +48,13 @@ import {
 	InstanceBillingResponse,
 	InstanceBillingUpdateRequest,
 } from '@fluxer/schema/src/domains/admin/InstanceBillingSchemas';
+import {
+	DistributionPricingConfigResponse,
+	DistributionPricingUpdateRequest,
+} from '@fluxer/schema/src/domains/admin/InstanceDistributionPricingSchemas';
 import {PushRelayConfigResponse, PushRelayConfigUpdateRequest} from '@fluxer/schema/src/domains/admin/PushRelaySchemas';
 import {VoiceP2pConfigResponse, VoiceP2pConfigUpdateRequest} from '@fluxer/schema/src/domains/admin/VoiceP2pSchemas';
+import {ConnectionProviderIdType} from '@fluxer/schema/src/domains/connection/OAuthConnectionSchemas';
 import {
 	ExperimentDeliveryConfigResponse,
 	ExperimentDeliveryConfigUpdateRequest,
@@ -63,6 +69,7 @@ import {
 } from '@fluxer/schema/src/domains/instance/InstanceSchemas';
 import {MessageEmbedResponse} from '@fluxer/schema/src/domains/message/EmbedSchemas';
 import {MessageResponseSchema} from '@fluxer/schema/src/domains/message/MessageResponseSchemas';
+import {withBase64Binary} from '@fluxer/schema/src/primitives/Base64BinaryFields';
 import {ChannelTypeSchema} from '@fluxer/schema/src/primitives/ChannelValidators';
 import {
 	ContentWarningLevelSchema,
@@ -617,6 +624,11 @@ const AppPublicConfigResponse = z.object({
 		premium_product_name: z.string(),
 		premium_info_url: z.string().nullable(),
 		sign_in_backdrop_url: z.string().nullable(),
+		premium_page_color: z.string().nullable(),
+		premium_showcase_expressions_url: z.string().nullable(),
+		premium_showcase_profile_url: z.string().nullable(),
+		premium_showcase_stream_url: z.string().nullable(),
+		premium_showcase_upload_url: z.string().nullable(),
 		custom_css: z.string().nullable(),
 		upload_limit_message: z.string().nullable(),
 		trusted_domains: z.array(z.string()),
@@ -665,6 +677,7 @@ const AppPublicConfigUpdateRequest = z.object({
 			premium_product_name: z.string().trim().min(1).max(40).nullable().optional(),
 			premium_info_url: z.string().trim().max(2048).refine(isAbsoluteHttpUrl).nullish(),
 			sign_in_backdrop_url: z.string().trim().max(2048).nullish(),
+			premium_page_color: z.string().trim().regex(HEX_THEME_COLOR_PATTERN).nullish(),
 			custom_css: z.string().trim().max(32_768).nullish(),
 			upload_limit_message: z.string().trim().max(UPLOAD_LIMIT_MESSAGE_MAX_LENGTH).nullish(),
 			trusted_domains: z.array(z.string().max(255)).max(TRUSTED_DOMAINS_MAX).nullish(),
@@ -759,6 +772,72 @@ const InstanceMediaResponse = z.object({
 	}),
 });
 
+const ConnectionProviderKindSchema = createNamedStringLiteralUnion(
+	[
+		['oidc', 'OIDC', 'OpenID Connect provider found through its issuer'],
+		['oauth2', 'OAUTH2', 'OAuth 2.0 provider with a JSON user endpoint'],
+	] as const,
+	'How Fluxer signs in to a connection provider',
+);
+
+const ConnectionProviderPathType = z
+	.string()
+	.trim()
+	.regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){0,7}$/)
+	.describe('Dot path into the JSON user object, for example data.0.login');
+
+const ConnectionProviderUrlType = z.string().trim().max(2048);
+
+const ConnectionProviderBaseFields = {
+	id: ConnectionProviderIdType,
+	name: z.string().trim().min(1).max(32).describe('Name shown to people'),
+	enabled: z.boolean(),
+	kind: ConnectionProviderKindSchema,
+	client_id: z.string().trim().min(1).max(256),
+	scope: z.string().trim().min(1).max(512).describe('Space-separated scopes. OpenID Connect providers need openid'),
+};
+
+export const ConnectionProviderConfigResponse = z.object({
+	...ConnectionProviderBaseFields,
+	issuer: z.string().nullable().describe('Issuer URL, required for oidc'),
+	authorization_url: z.string().nullable(),
+	token_url: z.string().nullable(),
+	userinfo_url: z.string().nullable(),
+	name_claim: z.string().nullable().describe('oidc claim with the account name, preferred_username when null'),
+	id_path: z.string().nullable().describe('oauth2 path to the account id in the user object'),
+	name_path: z.string().nullable().describe('oauth2 path to the account name in the user object'),
+	profile_url_template: z
+		.string()
+		.nullable()
+		.describe('HTTPS link to the account with {id} and {name} placeholders after the host'),
+	icon_url: z.string().nullable(),
+	client_secret_set: z.boolean(),
+	callback_url: z.string().describe('Redirect URL to register at the provider'),
+});
+
+export type ConnectionProviderConfigResponse = z.infer<typeof ConnectionProviderConfigResponse>;
+
+export const ConnectionProviderUpdate = z.object({
+	...ConnectionProviderBaseFields,
+	issuer: ConnectionProviderUrlType.nullish(),
+	authorization_url: ConnectionProviderUrlType.nullish(),
+	token_url: ConnectionProviderUrlType.nullish(),
+	userinfo_url: ConnectionProviderUrlType.nullish(),
+	name_claim: ConnectionProviderPathType.nullish(),
+	id_path: ConnectionProviderPathType.nullish(),
+	name_path: ConnectionProviderPathType.nullish(),
+	profile_url_template: ConnectionProviderUrlType.nullish(),
+	icon_url: ConnectionProviderUrlType.nullish(),
+	client_secret: z
+		.string()
+		.min(1)
+		.max(512)
+		.optional()
+		.describe('Leave out to keep the saved secret of the provider with the same id'),
+});
+
+export type ConnectionProviderUpdate = z.infer<typeof ConnectionProviderUpdate>;
+
 const InstanceIntegrationsResponse = z.object({
 	gif: z.object({
 		klipy_api_key_set: z.boolean(),
@@ -799,6 +878,9 @@ const InstanceIntegrationsResponse = z.object({
 		policy_uri: z.string().nullable(),
 		key_count: z.number().int().min(0),
 	}),
+	connection_providers: z
+		.array(ConnectionProviderConfigResponse)
+		.describe('Profile connection providers. Always empty outside self-hosted instances'),
 });
 
 const InstanceAccountIdentityConfigResponse = z.object({
@@ -833,6 +915,7 @@ export const InstanceConfigResponse = z.object({
 	integrations: InstanceIntegrationsResponse,
 	media: InstanceMediaResponse,
 	billing: InstanceBillingResponse,
+	distribution_pricing: DistributionPricingConfigResponse,
 	notice: InstanceNoticeSchema.nullable().describe('Notice shown to everyone on the instance, or null'),
 	warnings: z
 		.array(z.string())
@@ -986,6 +1069,11 @@ export const InstanceConfigUpdateRequest = z.object({
 				})
 				.register(schemaMetadata, {preserveNullFields: true})
 				.nullish(),
+			connection_providers: z
+				.array(ConnectionProviderUpdate)
+				.max(MAX_CONNECTION_PROVIDERS)
+				.optional()
+				.describe('Replaces the whole provider list. Only self-hosted instances can have providers'),
 		})
 		.nullish(),
 	media: z
@@ -1008,6 +1096,7 @@ export const InstanceConfigUpdateRequest = z.object({
 		.nullish(),
 	policy: InstancePolicyUpdateSchema.nullish(),
 	billing: InstanceBillingUpdateRequest.nullish(),
+	distribution_pricing: DistributionPricingUpdateRequest.nullish(),
 	notice: z
 		.object({
 			message: z
@@ -1039,8 +1128,20 @@ export const InstanceConfigUpdateRequest = z.object({
 export type InstanceConfigUpdateRequest = z.infer<typeof InstanceConfigUpdateRequest>;
 
 export const BrandingAssetUploadRequest = z.object({
-	kind: z.enum(['icon', 'symbol', 'logo', 'wordmark', 'favicon', 'favicon_dark', 'sign_in_backdrop']),
-	image: z.string().max(16_000_000).nullish(),
+	kind: z.enum([
+		'icon',
+		'symbol',
+		'logo',
+		'wordmark',
+		'favicon',
+		'favicon_dark',
+		'sign_in_backdrop',
+		'premium_showcase_expressions',
+		'premium_showcase_profile',
+		'premium_showcase_stream',
+		'premium_showcase_upload',
+	]),
+	image: withBase64Binary(z.string().max(16_000_000)).nullish(),
 });
 
 export type BrandingAssetUploadRequest = z.infer<typeof BrandingAssetUploadRequest>;
@@ -1529,7 +1630,7 @@ const AdminGuildResponseSchema = z.object({
 });
 const AdminGuildChannelSummarySchema = z.object({
 	id: SnowflakeStringType,
-	name: createStringType(1, 100).nullable(),
+	name: z.string().max(100).nullable(),
 	type: ChannelTypeSchema,
 	position: Int32Type,
 	parent_id: SnowflakeStringType.nullable(),
@@ -1541,7 +1642,7 @@ const AdminGuildChannelSummarySchema = z.object({
 });
 const AdminGuildRoleSummarySchema = z.object({
 	id: SnowflakeStringType,
-	name: createStringType(1, 100),
+	name: z.string().max(100),
 	color: Int32Type,
 	position: Int32Type,
 	permissions: PermissionStringType.describe('The role permissions bitfield'),
@@ -1556,7 +1657,7 @@ const AdminLookupGuildSchema = z.object({
 	owner_username: z.string().nullable(),
 	owner_global_name: z.string().nullable(),
 	owner_discriminator: z.string().nullable(),
-	name: createStringType(1, 100),
+	name: z.string().max(100),
 	vanity_url_code: createStringType(1, 256).nullable(),
 	icon: createStringType(1, 256).nullable(),
 	banner: createStringType(1, 256).nullable(),
@@ -1598,7 +1699,7 @@ export const ListGuildMembersResponse = z.object({
 });
 const GuildAssetItemSchema = z.object({
 	id: SnowflakeStringType,
-	name: createStringType(1, 100),
+	name: z.string().max(100),
 	animated: z.boolean(),
 	creator_id: SnowflakeStringType,
 	media_url: createStringType(1, 2048),
@@ -1743,6 +1844,7 @@ const ReportProfileSnapshotUserSchema = z.object({
 	global_name: z.string().nullable(),
 	bio: z.string().nullable(),
 	pronouns: z.string().nullable(),
+	custom_status: z.string().nullable(),
 	avatar: ReportProfileSnapshotAssetSchema.nullable(),
 	banner: ReportProfileSnapshotAssetSchema.nullable(),
 });

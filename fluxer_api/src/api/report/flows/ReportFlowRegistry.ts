@@ -20,11 +20,9 @@ import {
 	type ReportFlowLinkId,
 	type ReportFlowOutcomeDef,
 } from '@app/api/report/flows/ReportFlowScreens';
-import {getLegacyCategory, type ReportReasonKey} from '@app/api/report/flows/ReportReasonCatalog';
+import {getLegacyCategory, isUrgentReportReason, type ReportReasonKey} from '@app/api/report/flows/ReportReasonCatalog';
 import {isStringArray, parseJsonArray} from '@app/api/utils/JsonBoundaryUtils';
 import type {LocaleCode} from '@fluxer/constants/src/Locales';
-import {ValidationErrorCodes} from '@fluxer/constants/src/ValidationErrorCodes';
-import {InputValidationError} from '@fluxer/errors/src/domains/core/InputValidationError';
 import {InvalidReportFlowAnswersError} from '@fluxer/errors/src/domains/moderation/InvalidReportFlowAnswersError';
 import {ReportFlowOutdatedError} from '@fluxer/errors/src/domains/moderation/ReportFlowOutdatedError';
 import {parseAcceptLanguage} from '@fluxer/i18n/src/locale/resolution/AcceptLanguageNegotiation';
@@ -51,6 +49,7 @@ interface ReportFlowStepInput {
 
 interface ResolvedReportFlowAnswers {
 	reason: ReportReasonKey;
+	urgent: boolean;
 	legacyCategory: string;
 	steps: Array<ReportFlowStepRecord>;
 	stepsJson: string;
@@ -83,7 +82,7 @@ const ADMIN_LOCALE = 'en-US';
 
 assertValidReportFlowLibrary(REPORT_FLOW_LIBRARY);
 
-const variantCache = new Map<string, ReportFlowVariant | null>();
+const variantCache = new Map<string, ReportFlowVariant>();
 const responseCache = new Map<string, ReportFlowResponse>();
 
 function getReportFlowInstance(guidelinesUrl: string | null): ReportFlowInstance {
@@ -101,27 +100,18 @@ function getLinkUrl(link: ReportFlowLinkId, guidelinesUrl: string | null): strin
 	}
 }
 
-function findReportFlowVariant(
-	target: ReportFlowTargetType,
-	surface: ReportFlowSurface,
-	instance: ReportFlowInstance,
-): ReportFlowVariant | null {
-	const cacheKey = `${target}:${surface}:${instance.selfHosted}:${instance.guidelinesLinked}`;
-	if (!variantCache.has(cacheKey)) {
-		variantCache.set(cacheKey, buildReportFlowVariant(REPORT_FLOW_LIBRARY, target, surface, instance));
-	}
-	return variantCache.get(cacheKey) ?? null;
-}
-
-function requireReportFlowVariant(
+function getReportFlowVariant(
 	target: ReportFlowTargetType,
 	surface: ReportFlowSurface,
 	instance: ReportFlowInstance,
 ): ReportFlowVariant {
-	const variant = findReportFlowVariant(target, surface, instance);
-	if (!variant) {
-		throw InputValidationError.fromCode('surface', ValidationErrorCodes.INVALID_FORMAT);
+	const cacheKey = `${target}:${surface}:${instance.selfHosted}:${instance.guidelinesLinked}`;
+	const cached = variantCache.get(cacheKey);
+	if (cached) {
+		return cached;
 	}
+	const variant = buildReportFlowVariant(REPORT_FLOW_LIBRARY, target, surface, instance);
+	variantCache.set(cacheKey, variant);
 	return variant;
 }
 
@@ -155,7 +145,7 @@ function renderScreen(screen: ReportFlowVariantScreen, locale: string, guideline
 			label: renderCopy(option.label, locale),
 			outcome: renderOutcome(option.outcome, guidelinesUrl),
 		})),
-		options_heading: def.optionsHeading && screen.options.length > 0 ? renderCopy(def.optionsHeading, locale) : null,
+		options_heading: null,
 		checklist: def.checklist
 			? {
 					items: def.checklist.items.map((item) => ({
@@ -178,7 +168,7 @@ export function getReportFlowResponse(
 ): ReportFlowResponse {
 	const {guidelinesUrl} = getLegalUrls();
 	const instance = getReportFlowInstance(guidelinesUrl);
-	const variant = requireReportFlowVariant(target, surface, instance);
+	const variant = getReportFlowVariant(target, surface, instance);
 	const locale = resolveReportFlowLocale(rawLocale);
 	const cacheKey = [
 		target,
@@ -214,9 +204,12 @@ export function getReportFlowResponse(
 function findInvalidStep(
 	variant: ReportFlowVariant,
 	steps: ReadonlyArray<ReportFlowStepInput>,
-): {invalidStep: number} | {reason: ReportReasonKey; steps: Array<ReportFlowStepRecord>} {
+):
+	| {invalidStep: number}
+	| {reason: ReportReasonKey; submittedOnUrgentScreen: boolean; steps: Array<ReportFlowStepRecord>} {
 	let expectedScreenId: string | null = variant.startScreenId;
 	let finalReason: ReportReasonKey | null = null;
+	let submittedOnUrgentScreen = false;
 	let itemReason: ReportReasonKey | null = null;
 	const records: Array<ReportFlowStepRecord> = [];
 	for (let index = 0; index < steps.length; index++) {
@@ -267,6 +260,7 @@ function findInvalidStep(
 		} else if (outcome.type === 'submit') {
 			expectedScreenId = null;
 			finalReason = outcome.reason;
+			submittedOnUrgentScreen = screen.def.urgent === true;
 		} else {
 			return {invalidStep: index};
 		}
@@ -274,7 +268,7 @@ function findInvalidStep(
 	if (finalReason === null) {
 		return {invalidStep: Math.max(steps.length - 1, 0)};
 	}
-	return {reason: itemReason ?? finalReason, steps: records};
+	return {reason: itemReason ?? finalReason, submittedOnUrgentScreen, steps: records};
 }
 
 export function resolveReportFlowAnswers(params: {
@@ -283,7 +277,7 @@ export function resolveReportFlowAnswers(params: {
 	revisionHash: string;
 	steps: ReadonlyArray<ReportFlowStepInput>;
 }): ResolvedReportFlowAnswers {
-	const variant = requireReportFlowVariant(
+	const variant = getReportFlowVariant(
 		params.target,
 		params.surface,
 		getReportFlowInstance(getLegalUrls().guidelinesUrl),
@@ -298,6 +292,7 @@ export function resolveReportFlowAnswers(params: {
 	}
 	return {
 		reason: result.reason,
+		urgent: result.submittedOnUrgentScreen || isUrgentReportReason(result.reason),
 		legacyCategory: getLegacyCategory(result.reason, params.target),
 		steps: result.steps,
 		stepsJson: JSON.stringify(result.steps),

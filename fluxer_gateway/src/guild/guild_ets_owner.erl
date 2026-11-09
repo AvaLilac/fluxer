@@ -50,6 +50,7 @@ handle_cast(_Msg, State) ->
 -spec handle_info(term(), state()) -> {noreply, state()}.
 handle_info(sweep_orphan_tables, State) ->
     _ = sweep_orphan_tables(),
+    _ = proc_lib:spawn(fun guild_client_circuit_breaker:prune_dead/0),
     {noreply, State#{sweep_timer => schedule_orphan_sweep()}};
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -99,6 +100,13 @@ ensure_core_tables() ->
         {voice_state_count_servers, RW},
         {guild_unavailability_cache, RO},
         {guild_circuit_breaker, RW},
+        {guild_circuit_breaker_slots, [
+            named_table,
+            public,
+            ordered_set,
+            {read_concurrency, true},
+            {write_concurrency, true}
+        ]},
         {guild_permission_cache, RO},
         {guild_read_model, RO},
         {guild_health_status, RO},

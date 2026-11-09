@@ -81,11 +81,39 @@ export const InstanceBrandingSchema = z
 			.string()
 			.nullable()
 			.describe('Optional image URL drawn behind the sign-in card on a self-hosted instance'),
+		premium_page_color: z
+			.string()
+			.nullable()
+			.describe('Optional hex color a self-hosted instance uses to recolor its premium page'),
+		premium_showcase_expressions_url: z
+			.string()
+			.nullable()
+			.describe(
+				'Optional image a self-hosted instance shows next to the "Your emojis, everywhere" card on its premium page',
+			),
+		premium_showcase_profile_url: z
+			.string()
+			.nullable()
+			.describe(
+				'Optional image a self-hosted instance shows next to the "A profile that stands out" card on its premium page',
+			),
+		premium_showcase_stream_url: z
+			.string()
+			.nullable()
+			.describe(
+				'Optional image a self-hosted instance shows next to the "Stream in 4K at 60 FPS" card on its premium page',
+			),
+		premium_showcase_upload_url: z
+			.string()
+			.nullable()
+			.describe(
+				'Optional image a self-hosted instance shows next to the card about file size limits on its premium page',
+			),
 		custom_css: z
 			.string()
 			.nullable()
 			.describe(
-				'Optional stylesheet a self-hosted instance applies to its web and desktop app, except on sign-in pages',
+				'Optional stylesheet a self-hosted instance applies to its web and desktop app, including on sign-in pages',
 			),
 		upload_limit_message: z
 			.string()
@@ -175,6 +203,10 @@ export const InstanceEndpointsSchema = z
 		api: z.string().describe('Base URL for authenticated API requests'),
 		api_client: z.string().describe('Base URL for client API requests'),
 		api_public: z.string().describe('Base URL for public API requests'),
+		api_transport: z
+			.string()
+			.optional()
+			.describe('Base URL that official desktop clients send API requests to instead of api_client'),
 		gateway: z.string().describe('WebSocket URL for the gateway'),
 		media: z.string().describe('Base URL for the media proxy'),
 		upload_relay: z.string().optional().describe('Base URL for proxied attachment and preview uploads'),
@@ -339,11 +371,23 @@ export const InstanceCommunitySchema = z
 	.describe('Community topology and direct-message policy for this instance');
 export type InstanceCommunity = z.infer<typeof InstanceCommunitySchema>;
 
+export const InstanceConnectionProviderSchema = z
+	.object({
+		id: z.string().describe('Provider id used in connection routes'),
+		name: z.string().describe('Name of the provider shown to people'),
+		icon_url: z.string().nullable().describe('Media proxy URL of the provider icon'),
+	})
+	.describe('A profile connection provider set up by the instance');
+export type InstanceConnectionProvider = z.infer<typeof InstanceConnectionProviderSchema>;
+
 export const InstanceServicesSchema = z
 	.object({
 		gif_enabled: z.boolean().describe('Whether the GIF picker is enabled for this instance'),
 		youtube_enabled: z.boolean().describe('Whether YouTube link enrichment is enabled for this instance'),
 		bluesky_enabled: z.boolean().describe('Whether Bluesky profile connections are enabled for this instance'),
+		connection_providers: z
+			.array(InstanceConnectionProviderSchema)
+			.describe('OAuth and OpenID Connect providers people can connect to their profile on this instance'),
 	})
 	.describe('Optional third-party service integrations enabled for this instance');
 export type InstanceServices = z.infer<typeof InstanceServicesSchema>;
@@ -489,7 +533,7 @@ export const WellKnownFluxerResponse = z.object({
 	limits: LimitConfigResponse.describe('Limit configuration with rules and trait definitions'),
 	push: InstancePushSchema,
 	app_public: InstanceAppPublicSchema.describe('Public application configuration for client-side features'),
-	age_policy: InstanceAgePolicySchema.optional().describe('Regional age policy for this instance'),
+	age_policy: InstanceAgePolicySchema,
 	notice: InstanceNoticeSchema.nullable()
 		.optional()
 		.describe('Notice from the instance administrator, or null when there is none'),
@@ -516,7 +560,9 @@ export const WellKnownFluxerResponse = z.object({
 		.array(z.string())
 		.max(1000)
 		.optional()
-		.describe('Origins of every voice server endpoint, such as wss://voice.example.com, for content security policies'),
+		.describe(
+			'Origins of every voice server endpoint, such as wss://voice.example.com, for content security policies. Voice servers that share a domain are listed once as a wildcard, such as wss://*.example.com',
+		),
 });
 
 export type WellKnownFluxerResponse = z.infer<typeof WellKnownFluxerResponse>;

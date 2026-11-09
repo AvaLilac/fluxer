@@ -2,6 +2,7 @@
 
 import {createHash} from 'node:crypto';
 import {Config} from '@app/api/Config';
+import type {AgePolicyConfig} from '@app/api/config/APIConfig';
 import type {NatsGifProvider} from '@app/api/gif/NatsGifProvider';
 import {withAccountIdentitySetupLock} from '@app/api/instance/AccountIdentitySetupLock';
 import {type CustomBadge, compareBigInts} from '@app/api/instance/custom_badges/CustomBadgeRepository';
@@ -47,9 +48,12 @@ import type {InstanceAppPublic} from '@fluxer/instance_bootstrap/src/Types';
 import type {AccountsConfig, AuthConfig} from '@fluxer/schema/src/domains/admin/AccountsConfigSchemas';
 import type {CaptchaConfig} from '@fluxer/schema/src/domains/admin/CaptchaSchemas';
 import {toDomainMigrationDiscovery} from '@fluxer/schema/src/domains/admin/DomainMigrationSchemas';
+import type {GeoEntry} from '@fluxer/schema/src/domains/geolocation/GeolocationSchemas';
 import {
 	InstanceAccountIdentityResponse,
 	InstanceAccountIdentityUpdateRequest,
+	type InstanceAgePolicy,
+	type InstanceAgePolicyAction,
 	type InstanceBadge,
 	InstanceBadgesQuery,
 	InstanceBadgesResponse,
@@ -59,8 +63,15 @@ import {
 	WellKnownFluxerResponse,
 } from '@fluxer/schema/src/domains/instance/InstanceSchemas';
 import type {Hono} from 'hono';
+import {getDomain} from 'tldts';
 
 let discoveryValidators: DiscoveryValidators | null = null;
+
+function toAgePolicyDiscovery(agePolicy: AgePolicyConfig): InstanceAgePolicy {
+	const geos = (entries: Array<GeoEntry>, action: InstanceAgePolicyAction) =>
+		entries.map((entry) => ({country_code: entry.countryCode, region_code: entry.regionCode, action}));
+	return {geos: geos(agePolicy.restricted, 'restrict')};
+}
 
 function buildDiscoveryStaticInput(
 	gifService: NatsGifProvider | undefined,
@@ -99,6 +110,7 @@ function buildDiscoveryStaticInput(
 			api: apiClientEndpoint,
 			api_client: apiClientEndpoint,
 			api_public: apiPublicEndpoint,
+			...(Config.endpoints.apiTransportDiscovery ? {api_transport: Config.endpoints.apiTransportDiscovery} : {}),
 			gateway: Config.endpoints.gateway,
 			media: Config.endpoints.media,
 			upload_relay: Config.mediaProxy.uploadRelay.endpoint,
@@ -147,6 +159,7 @@ function buildDiscoveryStaticInput(
 			public_vapid_key: Config.push.publicVapidKey ?? null,
 		},
 		appPublic,
+		agePolicy: toAgePolicyDiscovery(Config.instance.agePolicy),
 	};
 }
 
@@ -160,7 +173,38 @@ function listVoiceOrigins(): Array<string> {
 			if (origin) origins.add(origin);
 		}
 	}
-	return Array.from(origins).sort();
+	return collapseVoiceOrigins(origins);
+}
+
+function collapseVoiceOrigins(origins: Iterable<string>): Array<string> {
+	const groups = new Map<string, Array<URL>>();
+	const out = new Set<string>();
+	for (const origin of origins) {
+		const url = new URL(origin);
+		const domain = getDomain(url.hostname);
+		if (!domain) {
+			out.add(origin);
+			continue;
+		}
+		const key = `${url.protocol}//${domain}:${url.port}`;
+		groups.set(key, [...(groups.get(key) ?? []), url]);
+	}
+	for (const urls of groups.values()) {
+		if (urls.length === 1) {
+			out.add(urls[0].origin);
+			continue;
+		}
+		const labels = urls.map((url) => url.hostname.split('.').reverse());
+		let shared = 0;
+		while (labels.every((host) => shared < host.length && host[shared] === labels[0][shared])) shared++;
+		const parent = labels[0].slice(0, shared).reverse().join('.');
+		const port = urls[0].port ? `:${urls[0].port}` : '';
+		for (const url of urls) {
+			if (url.hostname === parent) out.add(url.origin);
+		}
+		out.add(`${urls[0].protocol}//*.${parent}${port}`);
+	}
+	return Array.from(out).sort();
 }
 
 function mapBuiltInGuildBadgeImagesForDiscovery(images: BuiltInBadgeImages): InstanceBuiltInGuildBadgeImages {
@@ -254,6 +298,14 @@ export function InstanceController(app: Hono<HonoEnv>) {
 				instanceConfigRepository.getBuiltInBadgeImages(),
 				instanceConfigRepository.getHiddenBuiltInBadges(),
 			]);
+			const mediaService = ctx.get('mediaService');
+			const connectionProviders = [...(await instanceConfigRepository.getConnectionProviderIndex()).values()]
+				.filter(({provider}) => provider.enabled)
+				.map(({provider}) => ({
+					id: provider.id,
+					name: provider.name,
+					icon_url: provider.icon_url ? mediaService.getExternalMediaProxyURL(provider.icon_url) : null,
+				}));
 			const statusPageInstatus = await getStatusPageDetector().isInstatus(appPublicConfig.branding.status_page_url);
 			const lockReason =
 				Config.instance.selfHosted && !appPublicConfig.setup.configured
@@ -292,7 +344,7 @@ export function InstanceController(app: Hono<HonoEnv>) {
 					sso,
 					registration,
 					community,
-					services,
+					services: {...services, connection_providers: connectionProviders},
 					limits,
 				},
 			);

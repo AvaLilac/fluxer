@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {
+	buildTargetUrl,
 	classifyDomainMigrationInstallKind,
 	type DomainMigrationDisplayMode,
 	type DomainMigrationEnvironment,
@@ -10,7 +11,9 @@ import {
 	domainMovedBrowserMigrationUrl,
 	domainMovedInstallUrl,
 	domainMovedManifestId,
+	environmentMayForward,
 	isDomainMigrationOneShotRoute,
+	isForwardableOneShotRoute,
 	markDomainMigrationFailed,
 	readDomainMigrationMarker,
 	resolveDomainMigrationSide,
@@ -129,6 +132,20 @@ export function startDomainMigrationFromSource(side: DomainMigrationSide): true 
 	return true;
 }
 
+export function forwardOneShotRouteToTarget(): boolean {
+	const side = resolveDomainMigrationSide(window.location.origin);
+	const {pathname, search, hash} = window.location;
+	if (
+		side?.role !== 'source' ||
+		!isForwardableOneShotRoute(pathname) ||
+		!environmentMayForward(readDomainMigrationEnvironment(), readDomainMigrationDiscovery())
+	) {
+		return false;
+	}
+	window.location.assign(buildTargetUrl(side.target, pathname, search, hash));
+	return true;
+}
+
 export function readActiveSessionToken(): string | null {
 	try {
 		return parseStoredSessionValue(getProtectedLocalStorage()?.getItem(AuthSessionStorageKey.Token) ?? null);
@@ -144,6 +161,15 @@ export async function hasStoredAccount(): Promise<boolean> {
 	const {default: accountStorage} = await import('@app/features/auth/state/AccountStorage');
 	const {records: accounts} = await accountStorage.getAllAccounts();
 	return accounts.some((account) => Boolean(account.token));
+}
+
+export async function hasUsableStoredAccount(): Promise<boolean> {
+	if (readActiveSessionToken() !== null) {
+		return true;
+	}
+	const {default: accountStorage} = await import('@app/features/auth/state/AccountStorage');
+	const {records: accounts} = await accountStorage.getAllAccounts();
+	return accounts.some((account) => Boolean(account.token) && account.isValid !== false);
 }
 
 function openInBrowser(url: string): void {
