@@ -183,7 +183,7 @@ const AVIA_PLUGINS: string[] = [
 	'OnlinePlugins.js',
 	'localplugins.js',
 	'ThemesManager.js',
-	'AviaPluginThemeRepo.js',
+	'AviaPluginRepo.js',
 ];
 
 async function loadAviaInject(window: Electron.BrowserWindow): Promise<void> {
