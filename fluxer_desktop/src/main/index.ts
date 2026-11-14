@@ -179,6 +179,7 @@ const AVIA_PLUGINS: string[] = [
 	'RefreshTitlebarButton.js',
 	'menu.js',
 	'CategoryAPI.js',
+	'ToolbarAPI.js',
 	'FontLoader.js',
 	'OnlinePlugins.js',
 	'localplugins.js',
