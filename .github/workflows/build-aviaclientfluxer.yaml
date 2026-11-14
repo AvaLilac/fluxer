@@ -208,7 +208,7 @@ jobs:
         include:
           - platform: linux
             arch: x64
-            os: ubuntu-22.04
+            os: ubuntu-24.04
           - platform: windows
             arch: x64
             os: windows-latest
@@ -252,6 +252,16 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.14"
+
+      - name: Ensure python3 command (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $python = (Get-Command python).Source
+          $shimDir = Join-Path $env:RUNNER_TEMP 'python3-shim'
+          New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+          Set-Content -Path (Join-Path $shimDir 'python3.cmd') -Value "@echo off`n`"$python`" %*"
+          Add-Content -Path $env:GITHUB_PATH -Value $shimDir
 
       - name: Install Python setuptools (Linux)
         if: matrix.platform == 'linux'
@@ -375,6 +385,16 @@ jobs:
           cargo run --locked --quiet --manifest-path ${{ github.workspace }}/_ci/tools/ci/Cargo.toml -- build-desktop
           --step build_app_windows
 
+      - name: Verify the packaged shell starts and boots its bundled renderer (Windows)
+        if: matrix.platform == 'windows' && matrix.arch == 'x64'
+        working-directory: ${{ env.WORKDIR }}/fluxer_desktop
+        env:
+          BUILD_CHANNEL: ${{ env.BUILD_CHANNEL }}
+          BUILD_VERSION: ${{ env.BUILD_VERSION }}
+        run: >-
+          cargo run --locked --quiet --manifest-path ${{ github.workspace }}/_ci/tools/ci/Cargo.toml -- build-desktop
+          --step verify_bundled_renderer_windows
+
       - name: Create portable ZIP (Windows)
         if: matrix.platform == 'windows'
         working-directory: ${{ env.WORKDIR }}/fluxer_desktop
@@ -412,12 +432,19 @@ jobs:
           cargo run --locked --quiet --manifest-path ${{ github.workspace }}/_ci/tools/ci/Cargo.toml -- build-desktop
           --step build_app_linux
 
+      - name: Check Linux Electron dependencies
+        if: matrix.platform == 'linux'
+        working-directory: ${{ env.WORKDIR }}/fluxer_desktop
+        shell: bash
+        run: |
+          ldd dist-electron/linux-unpacked/fluxer || true
+
       - name: Verify the packaged shell boots its bundled renderer (Linux)
         if: matrix.platform == 'linux' && matrix.arch == 'x64'
         working-directory: ${{ env.WORKDIR }}/fluxer_desktop
         env:
           BUILD_CHANNEL: ${{ env.BUILD_CHANNEL }}
-          BUILD_VERSION: ${{ env.VERSION }}
+          BUILD_VERSION: ${{ env.BUILD_VERSION }}
         run: >-
           cargo run --locked --quiet --manifest-path ${{ github.workspace }}/_ci/tools/ci/Cargo.toml -- build-desktop
           --step verify_bundled_renderer_linux
