@@ -10053,6 +10053,11 @@ msgctxt "us-state"
 msgid "Connecticut"
 msgstr "कनेक्टिकट"
 
+#. Heading on the SSO callback page while connecting single sign-on from account settings.
+#: src/features/auth/components/pages/SsoCallbackPage.tsx
+msgid "Connecting single sign-on…"
+msgstr ""
+
 #. Auth status shown while connecting to an instance, when the instance selector resolves it or when sign-in waits for the live connection. Domain is interpolated.
 #: src/features/auth/flow/instance_selector/InstanceDiscoveryFailure.ts
 msgid "Connecting to {domain}…"
@@ -10934,6 +10939,8 @@ msgid "Couldn't complete sign-in. Try again."
 msgstr "साइन-इन पूरा नहीं हो सका। फिर से कोशिश करें।"
 
 #. Error title shown when starting to connect single sign-on from account settings fails.
+#. Heading on the SSO callback page when connecting single sign-on from account settings failed.
+#: src/features/auth/components/pages/SsoCallbackPage.tsx
 #: src/features/user/components/modals/tabs/account_security_tab/SsoConnectRow.tsx
 msgid "Couldn't connect single sign-on"
 msgstr "सिंगल साइन-ऑन कनेक्ट नहीं हो सका"
@@ -13516,6 +13523,7 @@ msgstr "डायरेक्ट मैसेज के प्रीव्यू
 #. Review row label for direct messages.
 #: src/features/app/components/setup/SetupWizardSteps.tsx
 #: src/features/channel/components/direct_message/DirectMessageList.tsx
+#: src/features/guild/components/modals/guild_tabs/GuildModerationTab.tsx
 #: src/features/i18n/utils/CommonMessageDescriptors.ts
 #: src/features/user/components/modals/tabs/privacy_safety_tab/ConnectionsTab.tsx
 msgid "Direct messages"
@@ -17558,6 +17566,11 @@ msgstr "आपके दोस्त आपको हमेशा मैसे�
 #: src/features/user/components/modals/tabs/privacy_safety_tab/ConnectionsTab.tsx
 msgid "Friends can always message you. These settings cover people and bots you only share a community with."
 msgstr "आपके दोस्त आपको हमेशा मैसेज कर सकते हैं। ये सेटिंग्स उन लोगों और बॉट्स के लिए हैं जिनके साथ आप केवल एक कम्युनिटी शेयर करते हैं।"
+
+#. Help text under the switch that turns off direct messages between community members who are not friends, in the community moderation settings tab.
+#: src/features/guild/components/modals/guild_tabs/GuildModerationTab.tsx
+msgid "Friends can still DM each other, and so can members who share another community. Bots aren't affected."
+msgstr "दोस्त अब भी एक-दूसरे को DM कर सकते हैं, और किसी दूसरी कम्युनिटी में साथ रहने वाले सदस्य भी। बॉट्स पर इसका असर नहीं पड़ता।"
 
 #. Privacy option label for people connected through mutual friends.
 #: src/features/i18n/utils/CommonMessageDescriptors.ts
@@ -21918,6 +21931,11 @@ msgstr "{localizedTime} के लिए रखरखाव निर्धा�
 msgid "Make {userName} the group owner? You'll lose owner privileges."
 msgstr "क्या आप {userName} को ग्रुप का मालिक बनाना चाहते हैं? आपके मालिक के विशेषाधिकार खत्म हो जाएँगे।"
 
+#. Description of the community ownership transfer section in community settings.
+#: src/features/guild/components/modals/guild_tabs/guild_overview_tab/sections/OwnerTransferSection.tsx
+msgid "Make another member the owner of this community. You cannot undo this."
+msgstr "किसी दूसरे सदस्य को इस कम्युनिटी का मालिक बनाएँ। आप इसे पहले जैसा नहीं कर सकेंगे।"
+
 #. Group DM action that transfers ownership of the group to the selected member.
 #. Group DM action that transfers ownership of the group to the selected member.
 #: src/features/ui/action_menu/GroupDMContextMenu.tsx
@@ -26254,6 +26272,11 @@ msgstr "भुगतान पेज फिर से खोलें"
 #: src/features/ui/components/form/FormCombobox.tsx
 msgid "Open popup"
 msgstr "पॉपअप खोलें"
+
+#. Tooltip on the media viewer button that closes the viewer and opens the media channel post the media belongs to.
+#: src/features/messaging/components/modals/media_modal/shared.ts
+msgid "Open post"
+msgstr "पोस्ट खोलें"
 
 #. Accessible label for the avatar button in the channel header of a DM. Opens the recipient user profile.
 #: src/features/channel/components/channel_header/shared.ts
@@ -31739,6 +31762,11 @@ msgstr "भाषा कोड खोजें…"
 #: src/features/user/components/modals/tabs/LanguageTab.tsx
 msgid "Search languages…"
 msgstr "भाषाएँ खोजें…"
+
+#. Placeholder of the member search in the community ownership transfer section.
+#: src/features/guild/components/modals/guild_tabs/guild_overview_tab/sections/OwnerTransferSection.tsx
+msgid "Search members"
+msgstr "सदस्यों को खोजें"
 
 #. Placeholder of the search box in the add members or roles step of the create channel modal.
 #: src/features/channel/components/modals/ChannelCreateAccessStep.tsx
@@ -37624,6 +37652,11 @@ msgstr "इस कम्युनिटी ने इनवाइट रोक �
 msgid "This community has paused invites. You can try again later."
 msgstr "इस कम्युनिटी ने इनवाइट रोक दिए हैं। आप बाद में फिर से कोशिश कर सकते हैं।"
 
+#. Shown in the community privacy modal under the direct messages switch when the community admins have turned off direct messages between members who are not friends, so the personal switch has no effect.
+#: src/features/guild/components/modals/GuildPrivacySettingsModal.tsx
+msgid "This community has turned off DMs between members who aren't friends"
+msgstr "इस कम्युनिटी ने उन सदस्यों के बीच DM बंद कर दिए हैं जो दोस्त नहीं हैं"
+
 #. Description text in the guild at capacity modal.
 #: src/features/guild/components/alerts/GuildAtCapacityModal.tsx
 msgid "This community is at its member limit and isn't accepting new members right now."
@@ -38736,6 +38769,11 @@ msgstr "वेबहुक बनाने के लिए, <0>{channelWebhooks
 msgid "To let people in, make a registration link in the admin panel."
 msgstr "लोगों को अंदर आने देने के लिए एडमिन पैनल में रजिस्ट्रेशन लिंक बनाएं।"
 
+#. Description of the account settings row for single sign-on in the desktop app, which cannot connect it. providerName is the provider name typed by the admin.
+#: src/features/user/components/modals/tabs/account_security_tab/SsoConnectRow.tsx
+msgid "To sign in to this account with {providerName}, connect it in the web app in a browser."
+msgstr ""
+
 #: src/features/guild/components/modals/GuildOwnershipWarningModal.tsx
 msgid "To transfer ownership, go to {generalSettingsPath} and use the transfer ownership option."
 msgstr "स्वामित्व ट्रांसफ़र करने के लिए, {generalSettingsPath} पर जाएँ और \"स्वामित्व ट्रांसफ़र करें\" विकल्प का उपयोग करें।"
@@ -38964,8 +39002,8 @@ msgstr "ट्रैकिंग"
 msgid "Tracking parameters"
 msgstr "ट्रैकिंग पैरामीटर"
 
-#. Short label in the transfer ownership modal. Keep it concise.
-#: src/features/guild/components/modals/TransferOwnershipModal.tsx
+#. Title of the community ownership transfer section in community settings and of its confirmation modal.
+#: src/features/i18n/utils/CommonMessageDescriptors.ts
 msgid "Transfer community ownership"
 msgstr "कम्युनिटी का स्वामित्व ट्रांसफ़र करें"
 
@@ -38975,10 +39013,14 @@ msgid "Transfer group ownership to {userName}?"
 msgstr "ग्रुप का स्वामित्व {userName} को ट्रांसफ़र करें?"
 
 #. Action label in community settings that hands ownership of the community to another member.
-#: src/features/guild/components/modals/TransferOwnershipModal.tsx
 #: src/features/i18n/utils/CommonMessageDescriptors.ts
 msgid "Transfer ownership"
 msgstr "स्वामित्व ट्रांसफ़र करें"
+
+#. Disabled confirm button in the transfer ownership modal. The number is a countdown in seconds until the button can be pressed.
+#: src/features/guild/components/modals/TransferOwnershipModal.tsx
+msgid "Transfer ownership ({secondsRemaining})"
+msgstr "स्वामित्व ट्रांसफ़र करें ({secondsRemaining})"
 
 #. Activity log detail line under a community settings update, shown when the community got a new owner. It continues the entry summary, so it has no subject. It is a past tense record of a change the actor in the summary already made, never an instruction to the reader. Do not write it as a command, a button label or in first or second person. {user} is the new owner, shown as a clickable user chip.
 #: src/features/guild/utils/guild_tabs/audit_log/AuditLogGuildMessages.ts
@@ -39335,6 +39377,11 @@ msgstr "डिवाइस कैमरा बंद करें"
 msgid "Turn off device stream"
 msgstr "डिवाइस स्ट्रीम बंद करें"
 
+#. Switch label in the community moderation settings tab. When on, members of this community who are not friends cannot start or continue direct messages through this community.
+#: src/features/guild/components/modals/guild_tabs/GuildModerationTab.tsx
+msgid "Turn off DMs between members who aren't friends"
+msgstr "उन सदस्यों के बीच DM बंद करें जो दोस्त नहीं हैं"
+
 #. Voice menu action that ends the current user screen share.
 #: src/features/ui/action_menu/items/voice_participant_menu_data/shared.ts
 msgid "Turn off stream"
@@ -39407,6 +39454,16 @@ msgstr "टेक्स्ट स्माइली को इमोजी म�
 #: src/features/theme_settings/components/QuickCssFiles.tsx
 msgid "Turn this theme on to see your changes in the app."
 msgstr "ऐप में अपने बदलाव देखने के लिए इस थीम को चालू करें।"
+
+#. Activity log detail line under a community settings update, shown when the setting that stops direct messages between community members who are not friends was turned off again. It continues the entry summary, so it has no subject. It is a past tense record of a change the actor in the summary already made, never an instruction to the reader. Do not write it as a command, a button label or in first or second person.
+#: src/features/guild/utils/guild_tabs/audit_log/AuditLogGuildMessages.ts
+msgid "Turned DMs between members who aren't friends back on"
+msgstr "उन सदस्यों के बीच DM फिर से चालू किए गए जो दोस्त नहीं हैं"
+
+#. Activity log detail line under a community settings update, shown when the setting that stops direct messages between community members who are not friends was turned on. It continues the entry summary, so it has no subject. It is a past tense record of a change the actor in the summary already made, never an instruction to the reader. Do not write it as a command, a button label or in first or second person.
+#: src/features/guild/utils/guild_tabs/audit_log/AuditLogGuildMessages.ts
+msgid "Turned off DMs between members who aren't friends"
+msgstr "उन सदस्यों के बीच DM बंद किए गए जो दोस्त नहीं हैं"
 
 #. Activity log detail line under a community settings update, shown when the Mature content setting of the community was turned off. It continues the entry summary, so it has no subject. It is a past tense record of a change the actor in the summary already made, never an instruction to the reader. Do not write it as a command, a button label or in first or second person.
 #: src/features/guild/utils/guild_tabs/audit_log/AuditLogGuildMessages.ts
@@ -43407,10 +43464,11 @@ msgstr "यह कनेक्शन आपके पास पहले से 
 msgid "You are about to leave {productName}"
 msgstr "आप {productName} छोड़ने वाले हैं"
 
+#. Warning in the ownership transfer confirmation. {0} is the new owner's display name and targetUserId is their numeric user ID, shown in brackets after the name.
 #. placeholder {0}: NicknameUtils.getNickname(targetUser, guildId)
 #: src/features/guild/components/modals/TransferOwnershipModal.tsx
-msgid "You are about to transfer ownership of this community to <0>{0}</0>. This action is <1>irreversible</1> and you will lose all owner privileges."
-msgstr "आप इस कम्युनिटी का मालिकाना हक़ <0>{0}</0> को ट्रांसफ़र करने वाले हैं। यह कार्रवाई <1>वापस नहीं ली जा सकती</1> और आप मालिक के सभी विशेषाधिकार खो देंगे।"
+msgid "You are about to transfer ownership of this community to <0>{0}</0> ({targetUserId}). This action is <1>irreversible</1> and you will lose all owner privileges."
+msgstr "आप इस कम्युनिटी का मालिकाना हक़ <0>{0}</0> ({targetUserId}) को ट्रांसफ़र करने वाले हैं। यह कार्रवाई <1>वापस नहीं ली जा सकती</1> और आप मालिक के सभी विशेषाधिकार खो देंगे।"
 
 #. Error message in the user banned from guild modal. Keep the tone plain and specific.
 #: src/features/invite/commands/InviteCommands.tsx
@@ -44803,6 +44861,11 @@ msgstr "आपका मैसेज डिलीवर नहीं हो स�
 #: src/features/messaging/state/MessageQueue.tsx
 msgid "Your message could not be delivered because it was flagged by our safety systems. If you believe this is a mistake, please contact the administrators of this instance."
 msgstr "आपका मैसेज डिलीवर नहीं हो सका क्योंकि इसे हमारे सुरक्षा सिस्टम ने फ़्लैग किया था। अगर आपको लगता है कि यह गलती से हुआ है, तो कृपया इस इंस्टेंस के एडमिनिस्ट्रेटर से संपर्क करें।"
+
+#. System message in a DM after a send fails because the only community the two people share has turned off direct messages between members who are not friends.
+#: src/features/messaging/state/MessageQueue.tsx
+msgid "Your message could not be delivered. A community you share with this person has turned off direct messages between members who aren't friends."
+msgstr "आपका मैसेज डिलीवर नहीं हो पाया। आप जिस कम्युनिटी में इस व्यक्ति के साथ हैं, उसने उन सदस्यों के बीच डायरेक्ट मैसेज बंद कर दिए हैं जो दोस्त नहीं हैं।"
 
 #. Label in the message queue state.
 #: src/features/messaging/state/MessageQueue.tsx

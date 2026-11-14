@@ -10053,6 +10053,11 @@ msgctxt "us-state"
 msgid "Connecticut"
 msgstr "קונטיקט"
 
+#. Heading on the SSO callback page while connecting single sign-on from account settings.
+#: src/features/auth/components/pages/SsoCallbackPage.tsx
+msgid "Connecting single sign-on…"
+msgstr ""
+
 #. Auth status shown while connecting to an instance, when the instance selector resolves it or when sign-in waits for the live connection. Domain is interpolated.
 #: src/features/auth/flow/instance_selector/InstanceDiscoveryFailure.ts
 msgid "Connecting to {domain}…"
@@ -10934,6 +10939,8 @@ msgid "Couldn't complete sign-in. Try again."
 msgstr "ההתחברות לא הושלמה. יש לנסות שוב."
 
 #. Error title shown when starting to connect single sign-on from account settings fails.
+#. Heading on the SSO callback page when connecting single sign-on from account settings failed.
+#: src/features/auth/components/pages/SsoCallbackPage.tsx
 #: src/features/user/components/modals/tabs/account_security_tab/SsoConnectRow.tsx
 msgid "Couldn't connect single sign-on"
 msgstr "לא ניתן היה לחבר את הכניסה היחידה"
@@ -13516,6 +13523,7 @@ msgstr "תצוגה מקדימה של הודעות פרטיות"
 #. Review row label for direct messages.
 #: src/features/app/components/setup/SetupWizardSteps.tsx
 #: src/features/channel/components/direct_message/DirectMessageList.tsx
+#: src/features/guild/components/modals/guild_tabs/GuildModerationTab.tsx
 #: src/features/i18n/utils/CommonMessageDescriptors.ts
 #: src/features/user/components/modals/tabs/privacy_safety_tab/ConnectionsTab.tsx
 msgid "Direct messages"
@@ -17558,6 +17566,11 @@ msgstr "חברים תמיד יכולים לשלוח לך הודעות."
 #: src/features/user/components/modals/tabs/privacy_safety_tab/ConnectionsTab.tsx
 msgid "Friends can always message you. These settings cover people and bots you only share a community with."
 msgstr "חברים תמיד יכולים לשלוח לך הודעות. הגדרות אלו חלות על אנשים ובוטים שאתה חולק איתם רק קהילה."
+
+#. Help text under the switch that turns off direct messages between community members who are not friends, in the community moderation settings tab.
+#: src/features/guild/components/modals/guild_tabs/GuildModerationTab.tsx
+msgid "Friends can still DM each other, and so can members who share another community. Bots aren't affected."
+msgstr "חברים עדיין יכולים לשלוח הודעות פרטיות זה לזה, וכך גם חברי קהילה שחולקים קהילה נוספת. ההגדרה לא חלה על בוטים."
 
 #. Privacy option label for people connected through mutual friends.
 #: src/features/i18n/utils/CommonMessageDescriptors.ts
@@ -21918,6 +21931,11 @@ msgstr "תחזוקה מתוכננת ל-{localizedTime}. משך זמן צפוי: 
 msgid "Make {userName} the group owner? You'll lose owner privileges."
 msgstr "להפוך את {userName} לבעל הקבוצה? תאבד את הרשאות הבעלות שלך."
 
+#. Description of the community ownership transfer section in community settings.
+#: src/features/guild/components/modals/guild_tabs/guild_overview_tab/sections/OwnerTransferSection.tsx
+msgid "Make another member the owner of this community. You cannot undo this."
+msgstr "הפוך חבר אחר לבעלים של הקהילה הזו. לא ניתן לבטל פעולה זו."
+
 #. Group DM action that transfers ownership of the group to the selected member.
 #. Group DM action that transfers ownership of the group to the selected member.
 #: src/features/ui/action_menu/GroupDMContextMenu.tsx
@@ -26254,6 +26272,11 @@ msgstr "פתיחת דף התשלום שוב"
 #: src/features/ui/components/form/FormCombobox.tsx
 msgid "Open popup"
 msgstr "פתח תפריט נפתח"
+
+#. Tooltip on the media viewer button that closes the viewer and opens the media channel post the media belongs to.
+#: src/features/messaging/components/modals/media_modal/shared.ts
+msgid "Open post"
+msgstr "פתח פוסט"
 
 #. Accessible label for the avatar button in the channel header of a DM. Opens the recipient user profile.
 #: src/features/channel/components/channel_header/shared.ts
@@ -31739,6 +31762,11 @@ msgstr "חיפוש קוד שפה…"
 #: src/features/user/components/modals/tabs/LanguageTab.tsx
 msgid "Search languages…"
 msgstr "חיפוש שפות…"
+
+#. Placeholder of the member search in the community ownership transfer section.
+#: src/features/guild/components/modals/guild_tabs/guild_overview_tab/sections/OwnerTransferSection.tsx
+msgid "Search members"
+msgstr "חפש חברים"
 
 #. Placeholder of the search box in the add members or roles step of the create channel modal.
 #: src/features/channel/components/modals/ChannelCreateAccessStep.tsx
@@ -37624,6 +37652,11 @@ msgstr "הקהילה הזו השהתה את ההזמנות."
 msgid "This community has paused invites. You can try again later."
 msgstr "הקהילה הזו השהתה הזמנות. אפשר לנסות שוב מאוחר יותר."
 
+#. Shown in the community privacy modal under the direct messages switch when the community admins have turned off direct messages between members who are not friends, so the personal switch has no effect.
+#: src/features/guild/components/modals/GuildPrivacySettingsModal.tsx
+msgid "This community has turned off DMs between members who aren't friends"
+msgstr "הקהילה הזו כיבתה הודעות פרטיות בין חברי קהילה שאינם חברים"
+
 #. Description text in the guild at capacity modal.
 #: src/features/guild/components/alerts/GuildAtCapacityModal.tsx
 msgid "This community is at its member limit and isn't accepting new members right now."
@@ -38736,6 +38769,11 @@ msgstr "כדי ליצור webhook, יש לפתוח את <0>{channelWebhooksSetti
 msgid "To let people in, make a registration link in the admin panel."
 msgstr "כדי להכניס אנשים, צור קישור הרשמה בלוח הניהול."
 
+#. Description of the account settings row for single sign-on in the desktop app, which cannot connect it. providerName is the provider name typed by the admin.
+#: src/features/user/components/modals/tabs/account_security_tab/SsoConnectRow.tsx
+msgid "To sign in to this account with {providerName}, connect it in the web app in a browser."
+msgstr ""
+
 #: src/features/guild/components/modals/GuildOwnershipWarningModal.tsx
 msgid "To transfer ownership, go to {generalSettingsPath} and use the transfer ownership option."
 msgstr "כדי להעביר בעלות, עבור אל {generalSettingsPath} והשתמש באפשרות העברת בעלות."
@@ -38964,8 +39002,8 @@ msgstr "מעקב"
 msgid "Tracking parameters"
 msgstr "פרמטרי מעקב"
 
-#. Short label in the transfer ownership modal. Keep it concise.
-#: src/features/guild/components/modals/TransferOwnershipModal.tsx
+#. Title of the community ownership transfer section in community settings and of its confirmation modal.
+#: src/features/i18n/utils/CommonMessageDescriptors.ts
 msgid "Transfer community ownership"
 msgstr "העברת בעלות על הקהילה"
 
@@ -38975,10 +39013,14 @@ msgid "Transfer group ownership to {userName}?"
 msgstr "להעביר את בעלות הקבוצה אל {userName}?"
 
 #. Action label in community settings that hands ownership of the community to another member.
-#: src/features/guild/components/modals/TransferOwnershipModal.tsx
 #: src/features/i18n/utils/CommonMessageDescriptors.ts
 msgid "Transfer ownership"
 msgstr "העברת בעלות"
+
+#. Disabled confirm button in the transfer ownership modal. The number is a countdown in seconds until the button can be pressed.
+#: src/features/guild/components/modals/TransferOwnershipModal.tsx
+msgid "Transfer ownership ({secondsRemaining})"
+msgstr "העברת בעלות ({secondsRemaining})"
 
 #. Activity log detail line under a community settings update, shown when the community got a new owner. It continues the entry summary, so it has no subject. It is a past tense record of a change the actor in the summary already made, never an instruction to the reader. Do not write it as a command, a button label or in first or second person. {user} is the new owner, shown as a clickable user chip.
 #: src/features/guild/utils/guild_tabs/audit_log/AuditLogGuildMessages.ts
@@ -39335,6 +39377,11 @@ msgstr "כיבוי מצלמת המכשיר"
 msgid "Turn off device stream"
 msgstr "כיבוי השידור מהמכשיר"
 
+#. Switch label in the community moderation settings tab. When on, members of this community who are not friends cannot start or continue direct messages through this community.
+#: src/features/guild/components/modals/guild_tabs/GuildModerationTab.tsx
+msgid "Turn off DMs between members who aren't friends"
+msgstr "כיבוי הודעות פרטיות בין חברי קהילה שאינם חברים"
+
 #. Voice menu action that ends the current user screen share.
 #: src/features/ui/action_menu/items/voice_participant_menu_data/shared.ts
 msgid "Turn off stream"
@@ -39407,6 +39454,16 @@ msgstr "המר סמיילים טקסטואליים לאימוג'י"
 #: src/features/theme_settings/components/QuickCssFiles.tsx
 msgid "Turn this theme on to see your changes in the app."
 msgstr "הפעל את ערכת הנושא הזו כדי לראות את השינויים שלך באפליקציה."
+
+#. Activity log detail line under a community settings update, shown when the setting that stops direct messages between community members who are not friends was turned off again. It continues the entry summary, so it has no subject. It is a past tense record of a change the actor in the summary already made, never an instruction to the reader. Do not write it as a command, a button label or in first or second person.
+#: src/features/guild/utils/guild_tabs/audit_log/AuditLogGuildMessages.ts
+msgid "Turned DMs between members who aren't friends back on"
+msgstr "הפעלה מחדש של הודעות פרטיות בין חברי קהילה שאינם חברים"
+
+#. Activity log detail line under a community settings update, shown when the setting that stops direct messages between community members who are not friends was turned on. It continues the entry summary, so it has no subject. It is a past tense record of a change the actor in the summary already made, never an instruction to the reader. Do not write it as a command, a button label or in first or second person.
+#: src/features/guild/utils/guild_tabs/audit_log/AuditLogGuildMessages.ts
+msgid "Turned off DMs between members who aren't friends"
+msgstr "כיבוי הודעות פרטיות בין חברי קהילה שאינם חברים"
 
 #. Activity log detail line under a community settings update, shown when the Mature content setting of the community was turned off. It continues the entry summary, so it has no subject. It is a past tense record of a change the actor in the summary already made, never an instruction to the reader. Do not write it as a command, a button label or in first or second person.
 #: src/features/guild/utils/guild_tabs/audit_log/AuditLogGuildMessages.ts
@@ -43407,10 +43464,11 @@ msgstr "חיבור זה כבר קיים אצלך."
 msgid "You are about to leave {productName}"
 msgstr "אתה עומד לעזוב את {productName}"
 
+#. Warning in the ownership transfer confirmation. {0} is the new owner's display name and targetUserId is their numeric user ID, shown in brackets after the name.
 #. placeholder {0}: NicknameUtils.getNickname(targetUser, guildId)
 #: src/features/guild/components/modals/TransferOwnershipModal.tsx
-msgid "You are about to transfer ownership of this community to <0>{0}</0>. This action is <1>irreversible</1> and you will lose all owner privileges."
-msgstr "אתה עומד להעביר את הבעלות על הקהילה הזו אל <0>{0}</0>. פעולה זו <1>בלתי הפיכה</1> ותאבד את כל הרשאות הבעלים."
+msgid "You are about to transfer ownership of this community to <0>{0}</0> ({targetUserId}). This action is <1>irreversible</1> and you will lose all owner privileges."
+msgstr "אתה עומד להעביר את הבעלות על הקהילה הזו אל <0>{0}</0> ({targetUserId}). פעולה זו <1>בלתי הפיכה</1> ותאבד את כל הרשאות הבעלים."
 
 #. Error message in the user banned from guild modal. Keep the tone plain and specific.
 #: src/features/invite/commands/InviteCommands.tsx
@@ -44803,6 +44861,11 @@ msgstr "ההודעה שלך לא נמסרה כי היא סומנה על ידי �
 #: src/features/messaging/state/MessageQueue.tsx
 msgid "Your message could not be delivered because it was flagged by our safety systems. If you believe this is a mistake, please contact the administrators of this instance."
 msgstr "ההודעה שלך לא נמסרה כי היא סומנה על ידי מערכות הבטיחות שלנו. אם לדעתך זו טעות, אנא פנה למנהלי המערכת של המופע הזה."
+
+#. System message in a DM after a send fails because the only community the two people share has turned off direct messages between members who are not friends.
+#: src/features/messaging/state/MessageQueue.tsx
+msgid "Your message could not be delivered. A community you share with this person has turned off direct messages between members who aren't friends."
+msgstr "ההודעה שלך לא נשלחה. קהילה משותפת לך ולאדם הזה כיבתה הודעות פרטיות בין חברי קהילה שאינם חברים."
 
 #. Label in the message queue state.
 #: src/features/messaging/state/MessageQueue.tsx
