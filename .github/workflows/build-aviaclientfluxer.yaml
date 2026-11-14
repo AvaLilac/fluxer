@@ -68,7 +68,7 @@ jobs:
     name: Build shared renderer assets
     needs:
       - meta
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -208,7 +208,7 @@ jobs:
         include:
           - platform: linux
             arch: x64
-            os: ubuntu-24.04
+            os: ubuntu-22.04
           - platform: windows
             arch: x64
             os: windows-latest
