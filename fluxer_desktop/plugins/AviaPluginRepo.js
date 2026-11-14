@@ -5,16 +5,13 @@
 
     const STORAGE_KEY = "avia_plugins";
     const OFFICIAL_REPO_URL = "https://raw.githubusercontent.com/AvaLilac/FluxerPluginsRepo/refs/heads/main/plugins.json";
-    const THEMES_REGISTRY_URL = "https://raw.githubusercontent.com/AvaLilac/PluginRepo/refs/heads/main/themebackend/themerepobackend.js";
 
     const getPlugins = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
     const setPlugins = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 
     let repoContent;
     let currentRepoData = [];
-    let currentThemeData = [];
     let searchInput;
-    let activeTab = "plugins";
 
     document.getElementById("avia-official-repo-btn")?.remove();
 
@@ -80,53 +77,6 @@
             }
             .avia-repo-install-btn:hover:not(:disabled) { background: rgba(255,255,255,0.13); }
             .avia-repo-install-btn:disabled { opacity: 0.4; cursor: default; }
-
-            .avia-repo-theme-card {
-                border-radius: 10px;
-                background: rgba(255,255,255,0.04);
-                border: 1px solid rgba(255,255,255,0.06);
-                overflow: hidden;
-                margin-bottom: 8px;
-                transition: background 0.15s, border-color 0.15s;
-            }
-            .avia-repo-theme-card:hover {
-                background: rgba(255,255,255,0.06);
-                border-color: rgba(255,255,255,0.10);
-            }
-            .avia-repo-theme-preview {
-                width: 100%;
-                display: block;
-                object-fit: cover;
-            }
-            .avia-repo-theme-info {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 9px 12px;
-                gap: 8px;
-            }
-            .avia-repo-theme-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.92); }
-            .avia-repo-theme-author { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; }
-
-            .avia-repo-tab {
-                padding: 8px 14px;
-                border: none;
-                background: transparent;
-                color: rgba(255,255,255,0.4);
-                font-size: 13px;
-                font-weight: 500;
-                cursor: pointer;
-                font-family: inherit;
-                position: relative;
-                transition: color 0.15s;
-                border-bottom: 2px solid transparent;
-                margin-bottom: -1px;
-            }
-            .avia-repo-tab:hover { color: rgba(255,255,255,0.75); }
-            .avia-repo-tab.active {
-                color: rgba(255,255,255,0.95);
-                border-bottom-color: rgba(255,255,255,0.55);
-            }
 
             .avia-repo-search {
                 width: 100%;
@@ -421,158 +371,6 @@
         }
     }
 
-    const THEMES_STORAGE_KEY = "avia_themes";
-    const getStoredThemes = () => JSON.parse(localStorage.getItem(THEMES_STORAGE_KEY) || "[]");
-    const setStoredThemes = (data) => localStorage.setItem(THEMES_STORAGE_KEY, JSON.stringify(data));
-
-    function installThemeCSS(theme, btn) {
-        btn.disabled = true;
-        btn.textContent = "Installing…";
-
-        fetch(theme.download)
-            .then(r => r.text())
-            .then(rawCSS => {
-                const themes = getStoredThemes();
-
-                const alreadyInstalled = themes.some(t => {
-                    const match = t.css.match(/@name\s+(.+)/);
-                    return match && match[1].trim() === theme.name;
-                });
-
-                if (alreadyInstalled) {
-                    btn.textContent = "Installed";
-                    return;
-                }
-
-                themes.push({ id: crypto.randomUUID(), css: rawCSS, enabled: true });
-                setStoredThemes(themes);
-
-                document.querySelectorAll(".avia-theme-style").forEach(e => e.remove());
-                getStoredThemes().forEach(t => {
-                    if (!t.enabled) return;
-                    const s = document.createElement("style");
-                    s.className = "avia-theme-style";
-                    s.textContent = t.css;
-                    document.head.appendChild(s);
-                });
-
-                if (typeof window.__avia_refresh_themes_panel === "function") {
-                    window.__avia_refresh_themes_panel();
-                }
-
-                btn.textContent = "Installed";
-            })
-            .catch(() => {
-                btn.textContent = "Install CSS";
-                btn.disabled = false;
-                alert("Failed to fetch theme CSS.");
-            });
-    }
-
-    function renderThemes(filter = "") {
-        if (!repoContent) return;
-        repoContent.innerHTML = "";
-
-        const filtered = currentThemeData.filter(t =>
-            (t.name + " " + (t.author || ""))
-                .toLowerCase().includes(filter.toLowerCase())
-        );
-
-        if (filtered.length === 0) {
-            repoContent.innerHTML = `<div class="avia-repo-empty">No themes found.</div>`;
-            return;
-        }
-
-        filtered.forEach(theme => {
-            const card = document.createElement("div");
-            card.className = "avia-repo-theme-card";
-
-            if (theme.preview) {
-                const img = document.createElement("img");
-                img.src = theme.preview;
-                img.alt = theme.name;
-                img.className = "avia-repo-theme-preview";
-                img.onerror = () => img.style.display = "none";
-                card.appendChild(img);
-            }
-
-            const info = document.createElement("div");
-            info.className = "avia-repo-theme-info";
-
-            const metaDiv = document.createElement("div");
-            metaDiv.style.minWidth = "0";
-            metaDiv.style.flex = "1";
-
-            const nameDv = document.createElement("div");
-            nameDv.className = "avia-repo-theme-name";
-            nameDv.textContent = theme.name;
-
-            const authorDv = document.createElement("div");
-            authorDv.className = "avia-repo-theme-author";
-            authorDv.textContent = theme.author || "Unknown";
-
-            metaDiv.appendChild(nameDv);
-            metaDiv.appendChild(authorDv);
-
-            const alreadyInstalled = getStoredThemes().some(t => {
-                const match = t.css.match(/@name\s+(.+)/);
-                return match && match[1].trim() === theme.name;
-            });
-
-            const dlBtn = document.createElement("button");
-            dlBtn.className = "avia-repo-install-btn";
-            dlBtn.textContent = alreadyInstalled ? "Installed" : "Install CSS";
-            dlBtn.disabled = alreadyInstalled;
-            dlBtn.onclick = () => installThemeCSS(theme, dlBtn);
-
-            info.appendChild(metaDiv);
-            info.appendChild(dlBtn);
-            card.appendChild(info);
-            repoContent.appendChild(card);
-        });
-    }
-
-    function refetchThemes() {
-        if (!repoContent) return;
-        repoContent.innerHTML = `<div class="avia-repo-empty">Loading themes…</div>`;
-        currentThemeData = [];
-
-        fetch(THEMES_REGISTRY_URL)
-            .then(r => r.json())
-            .then(async registry => {
-                const sources = registry.sources || [];
-                const results = await Promise.allSettled(
-                    sources.map(s => fetch(s.url).then(r => r.json()))
-                );
-                results.forEach(r => {
-                    if (r.status === "fulfilled") currentThemeData.push(...(r.value.themes || []));
-                });
-                renderThemes(searchInput.value);
-            })
-            .catch(() => {
-                if (repoContent) repoContent.innerHTML = `<div class="avia-repo-empty">Failed to fetch themes.</div>`;
-            });
-    }
-
-    function switchTab(tab, tabPluginsBtn, tabThemesBtn) {
-        activeTab = tab;
-        tabPluginsBtn.classList.toggle("active", tab === "plugins");
-        tabThemesBtn.classList.toggle("active", tab === "themes");
-
-        searchInput.placeholder = tab === "plugins"
-            ? "Search plugins or authors…"
-            : "Search themes or authors…";
-        searchInput.value = "";
-
-        if (tab === "plugins") {
-            if (currentRepoData.length > 0) renderRepo({ plugins: currentRepoData });
-            else refetchPlugins();
-        } else {
-            if (currentThemeData.length > 0) renderThemes();
-            else refetchThemes();
-        }
-    }
-
     function openWindow() {
         let panel = document.getElementById("avia-official-repo-window");
         if (panel) {
@@ -615,7 +413,7 @@
             userSelect: "none",
             flexShrink: "0"
         });
-        header.textContent = "Plugins & Themes Repo";
+        header.textContent = "Plugins Repo";
 
         const close = document.createElement("div");
         close.textContent = "✕";
@@ -656,29 +454,6 @@
             document.body.style.userSelect = "";
         });
 
-        const tabBar = document.createElement("div");
-        Object.assign(tabBar.style, {
-            display: "flex",
-            padding: "0 12px",
-            background: "rgba(255,255,255,0.02)",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
-            flexShrink: "0"
-        });
-
-        const tabPluginsBtn = document.createElement("button");
-        tabPluginsBtn.className = "avia-repo-tab";
-        tabPluginsBtn.textContent = "Plugins";
-
-        const tabThemesBtn = document.createElement("button");
-        tabThemesBtn.className = "avia-repo-tab";
-        tabThemesBtn.textContent = "Themes";
-
-        tabPluginsBtn.onclick = () => switchTab("plugins", tabPluginsBtn, tabThemesBtn);
-        tabThemesBtn.onclick = () => switchTab("themes", tabPluginsBtn, tabThemesBtn);
-
-        tabBar.appendChild(tabPluginsBtn);
-        tabBar.appendChild(tabThemesBtn);
-
         const searchWrap = document.createElement("div");
         Object.assign(searchWrap.style, {
             padding: "10px 12px",
@@ -690,8 +465,7 @@
         searchInput.className = "avia-repo-search";
         searchInput.placeholder = "Search plugins or authors…";
         searchInput.addEventListener("input", () => {
-            if (activeTab === "plugins") renderRepo({ plugins: currentRepoData }, searchInput.value);
-            else renderThemes(searchInput.value);
+            renderRepo({ plugins: currentRepoData }, searchInput.value);
         });
 
         searchWrap.appendChild(searchInput);
@@ -706,23 +480,21 @@
         });
 
         panel.appendChild(header);
-        panel.appendChild(tabBar);
         panel.appendChild(searchWrap);
         panel.appendChild(repoContent);
         document.body.appendChild(panel);
 
-        switchTab("plugins", tabPluginsBtn, tabThemesBtn);
         refetchPlugins();
     }
 
     function registerWithAviaCategory() {
         if (window.AviaCategory) {
-            window.AviaCategory.register({ id: "avia_official_repo", name: "Plugins & Themes Repo", icon: "palette", onClick: openWindow });
+            window.AviaCategory.register({ id: "avia_official_repo", name: "Plugins Repo", icon: "palette", onClick: openWindow });
         } else {
             const interval = setInterval(() => {
                 if (window.AviaCategory) {
                     clearInterval(interval);
-                    window.AviaCategory.register({ id: "avia_official_repo", name: "Plugins & Themes Repo", icon: "palette", onClick: openWindow });
+                    window.AviaCategory.register({ id: "avia_official_repo", name: "Plugins Repo", icon: "palette", onClick: openWindow });
                 }
             }, 100);
         }
@@ -730,12 +502,12 @@
 
     function registerWithAviaMenu() {
         if (window.AviaMenu) {
-            window.AviaMenu.register({ id: "avia_official_repo", name: "Plugins & Themes Repo", icon: "palette", onClick: openWindow });
+            window.AviaMenu.register({ id: "avia_official_repo", name: "Plugins Repo", icon: "palette", onClick: openWindow });
         } else {
             const interval = setInterval(() => {
                 if (window.AviaMenu) {
                     clearInterval(interval);
-                    window.AviaMenu.register({ id: "avia_official_repo", name: "Plugins & Themes Repo", icon: "palette", onClick: openWindow });
+                    window.AviaMenu.register({ id: "avia_official_repo", name: "Plugins Repo", icon: "palette", onClick: openWindow });
                 }
             }, 100);
         }
