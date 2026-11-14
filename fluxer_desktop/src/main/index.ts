@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {getDesktopWindowBehaviorSettings} from '@electron/common/DesktopConfig';
 import {DESKTOP_APP_NAME} from '@electron/common/DesktopIdentity';
 import {errorMessage} from '@electron/common/ErrorMessage';
@@ -83,6 +84,7 @@ import {cleanupVirtmic, registerVirtmicHandlers} from '@electron/main/LinuxAudio
 import {ensureLinuxDesktopEntry} from '@electron/main/LinuxDesktopEntry';
 import {cleanupDesktopLocalAppProtocol} from '@electron/main/LocalAppProtocol';
 import {initializeMainI18n, t} from '@electron/main/MainI18n';
+import {createApplicationMenu} from '@electron/main/Menu';
 import {
 	hasQuitStarted,
 	isStartupWindowPending,
@@ -170,9 +172,7 @@ log.info('Configured user data storage', {
 
 cleanupLinuxChromiumSpellcheckDictionaries(userDataConfig.base);
 
-loadDesktopConfig(userDataConfig.base);
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const MAIN_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const AVIA_PLUGINS: string[] = [
 	'RefreshTitlebarButton.js',
@@ -190,7 +190,7 @@ function loadAviaInject(window: Electron.BrowserWindow): void {
 		log.info('[AviaInject] dom-ready fired, injecting plugins');
 		try {
 			for (const plugin of AVIA_PLUGINS) {
-				const pluginPath: string = path.join(__dirname, 'plugins', plugin);
+				const pluginPath: string = path.join(MAIN_DIR, 'plugins', plugin);
 				log.info(`[AviaInject] loading ${pluginPath}`);
 				const pluginCode: string = fs.readFileSync(pluginPath, 'utf8');
 				await window.webContents.executeJavaScript(pluginCode, true);
@@ -200,6 +200,12 @@ function loadAviaInject(window: Electron.BrowserWindow): void {
 			log.error('[AviaInject] plugin injection failed:', error);
 		}
 	});
+}
+
+function createAviaWindow() {
+	const window = createWindow();
+	loadAviaInject(window);
+	return window;
 }
 
 function exitCli(code: number): void {
@@ -485,12 +491,12 @@ export function initializeMainWindowStartup(): void {
 	ipcMain.on(DESKTOP_LAST_ROUTE_CHANNEL, (_event, routePath: unknown) => {
 		recordDesktopLastRoute(app.getPath('userData'), routePath);
 	});
-	setMainWindowFactory(() => createWindow());
+	setMainWindowFactory(() => createAviaWindow());
 	app.on('activate', () => {
 		if (hasQuitStarted()) return;
 		const mainWindow = getMainWindow();
 		if (mainWindow === null || mainWindow.isDestroyed()) {
-			if (!isStartupWindowPending()) createWindow();
+			if (!isStartupWindowPending()) createAviaWindow();
 		} else {
 			showWindow();
 		}
@@ -873,7 +879,7 @@ export async function finishMainAppStartup(): Promise<void> {
 	}
 	runStartupPhase('desktop-tray', () => {
 		initializeDesktopTray({
-			createWindow,
+			createWindow: createAviaWindow,
 			getMainWindow,
 			hideWindow,
 			setQuitting,
