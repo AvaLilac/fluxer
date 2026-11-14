@@ -134,11 +134,6 @@ func IsIPv4(addr string) bool {
 	return err == nil && ip.Is4()
 }
 
-func IsIPv6(addr string) bool {
-	ip, err := netip.ParseAddr(addr)
-	return err == nil && ip.Is6() && !ip.Is4In6()
-}
-
 func GlobalIPv6(addr string) bool {
 	ip, err := netip.ParseAddr(addr)
 	if err != nil || !ip.Is6() || ip.Is4In6() || ip.Zone() != "" || !ip.IsGlobalUnicast() {
@@ -220,8 +215,6 @@ type Reachability struct {
 	BehindNAT  bool
 	CGNAT      bool
 }
-
-func (r Reachability) Family() string { return FamilyOf(r.PublicIPv4, r.PublicIPv6) }
 
 func Assess(publicIPv4, publicIPv6 string, local []string, routeIP string) Reachability {
 	r := Reachability{PublicIPv4: publicIPv4, PublicIPv6: publicIPv6}
@@ -459,7 +452,7 @@ func dialHost(bind string) string {
 	return a.String()
 }
 
-func InstanceEdge(endpoint, mode, httpsPort, bind string) (string, string) {
+func InstanceEdge(endpoint, mode, httpsPort, bind, listen string) (string, string) {
 	base := HTTPBase(endpoint)
 	switch mode {
 	case settings.EdgeProxy, settings.EdgeTunnel:
@@ -480,7 +473,7 @@ func InstanceEdge(endpoint, mode, httpsPort, bind string) (string, string) {
 	if v := usable(httpsPort); v != "" {
 		port = v
 	}
-	return base, "127.0.0.1:" + port
+	return base, settings.EdgeDialAddr(usable(listen), port)
 }
 
 func usable(v string) string {

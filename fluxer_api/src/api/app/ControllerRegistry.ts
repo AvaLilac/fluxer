@@ -4,14 +4,17 @@ import {ActivityPubController} from '@app/api/activity_pub/ActivityPubController
 import {AdminDownloadController} from '@app/api/admin/AdminDownloadController';
 import {registerAdminControllers} from '@app/api/admin/controllers/index';
 import {AttachmentController} from '@app/api/attachment/AttachmentController';
+import {AttachmentMediaController} from '@app/api/attachment/AttachmentMediaController';
 import {AccountEntryController} from '@app/api/auth/AccountEntryController';
 import {AuthController} from '@app/api/auth/AuthController';
 import {OriginHandoffController} from '@app/api/auth/OriginHandoffController';
 import {PasskeyBridgeController} from '@app/api/auth/PasskeyBridgeController';
+import {BillingDocumentController} from '@app/api/billing_documents/BillingDocumentController';
 import {BlueskyOAuthController} from '@app/api/bluesky/BlueskyOAuthController';
 import {registerChannelControllers} from '@app/api/channel/controllers/index';
 import type {APIConfig} from '@app/api/config/APIConfig';
 import {ConnectionController} from '@app/api/connection/ConnectionController';
+import {OAuthConnectionController} from '@app/api/connection/OAuthConnectionController';
 import {DonationController} from '@app/api/donation/DonationController';
 import {DownloadController} from '@app/api/download/DownloadController';
 import {ExperimentController} from '@app/api/experiment/ExperimentController';
@@ -59,6 +62,7 @@ export function registerControllers(routes: HonoApp, config: APIConfig): void {
 	registerChannelControllers(routes);
 	ConnectionController(routes);
 	BlueskyOAuthController(routes);
+	OAuthConnectionController(routes);
 	InstanceController(routes);
 	ActivityPubController(routes);
 	OpenAPIController(routes);
@@ -88,6 +92,8 @@ export function registerControllers(routes: HonoApp, config: APIConfig): void {
 	if (!config.instance.selfHosted) {
 		DonationController(routes);
 		OperatorPassController(routes);
+		BillingDocumentController(routes);
 	}
 	StripeController(routes);
+	AttachmentMediaController(routes);
 }

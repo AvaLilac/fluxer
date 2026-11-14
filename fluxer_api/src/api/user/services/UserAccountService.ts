@@ -16,6 +16,7 @@ import type {LimitConfigService} from '@app/api/limits/LimitConfigService';
 import {getOperatorPassWallService} from '@app/api/middleware/ServiceSingletons';
 import type {AuthSession} from '@app/api/models/AuthSession';
 import type {User} from '@app/api/models/User';
+import type {OperatorPassLabsRoleService} from '@app/api/operator_pass/OperatorPassLabsRole';
 import {enqueueStripeCustomerEmailSync} from '@app/api/stripe/StripeCustomer';
 import {isOperatorPassCountHidden} from '@app/api/user/profile_badges/PremiumBadgeMasking';
 import type {UserRepository} from '@app/api/user/repositories/UserRepository';
@@ -77,6 +78,7 @@ export class UserAccountService {
 		private readonly contactChangeLogService: UserContactChangeLogService,
 		connectionRepository: ConnectionRepository,
 		readonly limitConfigService: LimitConfigService,
+		labsRoleService: Pick<OperatorPassLabsRoleService, 'resyncLabsRoles'> | null,
 	) {
 		const {
 			users: userAccountRepository,
@@ -119,6 +121,8 @@ export class UserAccountService {
 			userCacheService,
 			guildRepository,
 			limitConfigService,
+			cacheService: this.apiContext.services.cache,
+			labsRoleService,
 		});
 		this.notesService = new UserAccountNotesService({
 			userAccountRepository,
@@ -138,7 +142,12 @@ export class UserAccountService {
 	async update(params: UpdateUserParams): Promise<UpdateUserResult> {
 		const {user, oldAuthSession, data, request, sudoContext, emailVerifiedViaToken = false} = params;
 		const profileResult = await this.profileService.processProfileUpdates({user, data});
-		const securityResult = await this.securityService.processSecurityUpdates({user, data, sudoContext});
+		const securityResult = await this.securityService
+			.processSecurityUpdates({user, data, sudoContext})
+			.catch(async (error: unknown) => {
+				await this.profileService.rollbackAssetUploads(profileResult);
+				throw error;
+			});
 		const updates = {
 			...securityResult.updates,
 			...profileResult.updates,
@@ -151,6 +160,7 @@ export class UserAccountService {
 		const emailChanged = data.email !== undefined;
 		if (emailChanged) {
 			updates.email_verified = !!emailVerifiedViaToken;
+			updates.email_bounced = false;
 		}
 		let updatedUser: User;
 		try {

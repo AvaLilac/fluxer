@@ -20,19 +20,20 @@ pub async fn try_resolve(
     media_proxy: &MediaProxyClient,
     nsfw_mode: NsfwMode,
     url: &Url,
-    html: &str,
+    page: &html_parser::PageMetadata,
 ) -> Option<Vec<MessageEmbed>> {
-    let Some(ap_link) = html_parser::find_activity_pub_link(html) else {
+    let apple_touch_icon = page.apple_touch_icon.as_deref();
+    let Some(ap_link) = page.activity_pub_link.as_deref() else {
         if client.signer.is_some()
             && utils::extract_post_id(url).is_some()
-            && html_parser::has_fediverse_profile_username(html)
+            && page.has_fediverse_profile_username
         {
             return resolve_activity_pub_post(
                 client,
                 media_proxy,
                 nsfw_mode,
                 url,
-                html,
+                apple_touch_icon,
                 url.as_str(),
             )
             .await;
@@ -40,21 +41,28 @@ pub async fn try_resolve(
         return None;
     };
 
-    let ap_url = utils::resolve_relative_url(url, &ap_link)?;
+    let ap_url = utils::resolve_relative_url(url, ap_link)?;
 
     if !utils::is_http_url(&ap_url) {
         return None;
     }
 
-    if let Some(embeds) =
-        resolve_activity_pub_post(client, media_proxy, nsfw_mode, url, html, &ap_url).await
+    if let Some(embeds) = resolve_activity_pub_post(
+        client,
+        media_proxy,
+        nsfw_mode,
+        url,
+        apple_touch_icon,
+        &ap_url,
+    )
+    .await
     {
         return Some(embeds);
     }
 
     let post_id = utils::extract_post_id(url)?;
     let mastodon_post = fetcher::fetch_mastodon_status(client.http, url, &post_id).await?;
-    let mut context = build_context(client, url, Some(html)).await;
+    let mut context = build_context(client, url, apple_touch_icon).await;
     if mastodon_post.in_reply_to_id.is_some() && mastodon_post.in_reply_to_account_id.is_some() {
         context.in_reply_to = fetch_mastodon_reply_context(client.http, url, &mastodon_post).await;
     }
@@ -74,15 +82,19 @@ async fn resolve_activity_pub_post(
     media_proxy: &MediaProxyClient,
     nsfw_mode: NsfwMode,
     url: &Url,
-    html: &str,
+    apple_touch_icon: Option<&str>,
     ap_url: &str,
 ) -> Option<Vec<MessageEmbed>> {
     let post = fetcher::fetch_activity_pub(client, ap_url).await?;
     let author_actor = fetch_post_author_actor(client, &post).await;
-    if visibility::is_hidden_from_unauthed_web(&post, author_actor.as_ref()) {
+    if visibility::is_hidden_from_unauthed_web(
+        &post,
+        author_actor.as_ref(),
+        client.signer.is_some(),
+    ) {
         return None;
     }
-    let mut context = build_context(client, url, Some(html)).await;
+    let mut context = build_context(client, url, apple_touch_icon).await;
     if let Some(parent_url) = post.in_reply_to.as_deref() {
         context.in_reply_to = fetch_activity_pub_reply_context(client, parent_url).await;
     }
@@ -110,10 +122,9 @@ async fn resolve_activity_pub_post(
 pub(crate) async fn build_context(
     client: ActivityPubClient<'_>,
     url: &Url,
-    html: Option<&str>,
+    apple_touch_icon: Option<&str>,
 ) -> types::ActivityPubContext {
     let instance = fetcher::fetch_instance_info(client.http, url).await;
-    let apple_touch_icon = html.and_then(|html| html_parser::find_apple_touch_icon(html, url));
     let clean_host = url
         .host_str()
         .unwrap_or_default()
@@ -131,7 +142,9 @@ pub(crate) async fn build_context(
             .as_ref()
             .and_then(|i| i.title.clone())
             .unwrap_or_else(|| format!("{clean_host} Mastodon")),
-        server_icon: instance.and_then(|i| i.thumbnail_url).or(apple_touch_icon),
+        server_icon: instance
+            .and_then(|i| i.thumbnail_url)
+            .or(apple_touch_icon.map(ToOwned::to_owned)),
         in_reply_to: None,
     }
 }
@@ -150,7 +163,11 @@ async fn fetch_activity_pub_reply_context(
 ) -> Option<types::ActivityPubReplyContext> {
     let parent = fetcher::fetch_activity_pub(client, parent_url).await?;
     let author_actor = fetch_post_author_actor(client, &parent).await;
-    if visibility::is_hidden_from_unauthed_web(&parent, author_actor.as_ref()) {
+    if visibility::is_hidden_from_unauthed_web(
+        &parent,
+        author_actor.as_ref(),
+        client.signer.is_some(),
+    ) {
         return None;
     }
     let author = match author_actor.as_ref() {
@@ -199,7 +216,11 @@ async fn fetch_activity_pub_quote_child(
         .or(post.misskey_quote.as_deref())?;
     let quote = fetcher::fetch_activity_pub(client, quote_url).await?;
     let author_actor = fetch_post_author_actor(client, &quote).await;
-    if visibility::is_hidden_from_unauthed_web(&quote, author_actor.as_ref()) {
+    if visibility::is_hidden_from_unauthed_web(
+        &quote,
+        author_actor.as_ref(),
+        client.signer.is_some(),
+    ) {
         return None;
     }
     let fallback = Url::parse(quote_url).ok()?;

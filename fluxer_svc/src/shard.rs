@@ -10,9 +10,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::{Semaphore, TryAcquireError, oneshot};
 use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use tracing::{debug, info, warn};
 
 const MAX_SHARD_REQUEST_BYTES: usize = 2 * 1024 * 1024;
+const MAX_IN_FLIGHT_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 const SHARD_DRAIN_LINGER: Duration = Duration::from_millis(500);
 const SHARD_ANNOUNCE_TIMEOUT: Duration = Duration::from_secs(1);
 const DRAIN_IDLE_UNSUBSCRIBE: Duration = Duration::from_millis(250);
@@ -63,6 +66,7 @@ pub async fn run_shard<S>(
     config: &ServiceConfig,
     service: S,
     transport: impl Transport,
+    shutdown: CancellationToken,
 ) -> anyhow::Result<()>
 where
     S: ShardService,
@@ -92,7 +96,7 @@ where
                 handler_metrics.clone(),
             )
         },
-        crate::shutdown::wait_for_shutdown(),
+        shutdown,
     )
     .await
 }
@@ -220,7 +224,7 @@ pub(crate) async fn serve<T, H, F>(
     metrics: Arc<ServiceMetrics>,
     transport: T,
     handle: H,
-    shutdown: impl std::future::Future<Output = ()>,
+    shutdown: CancellationToken,
 ) -> anyhow::Result<()>
 where
     T: Transport,
@@ -237,14 +241,26 @@ where
     let health_addr = config.listen_addr;
     let is_serving = Arc::new(AtomicBool::new(false));
     let request_permits = Arc::new(Semaphore::new(config.max_concurrent_requests));
+    let request_byte_budget = Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUEST_BYTES));
 
     let mut tasks = JoinSet::new();
 
     let http_is_serving = is_serving.clone();
     let http_metrics = metrics.clone();
-    tasks.spawn(async move {
-        crate::server::run_http(health_addr, http_is_serving, http_metrics, name).await
-    });
+    let build_version = config.build_version.clone();
+    tasks.spawn(
+        async move {
+            crate::server::run_http(
+                health_addr,
+                http_is_serving,
+                http_metrics,
+                name,
+                build_version,
+            )
+            .await
+        }
+        .in_current_span(),
+    );
 
     let listen_is_serving = is_serving.clone();
     let listen_announce = announce.clone();
@@ -336,11 +352,31 @@ where
                             }
                             Err(TryAcquireError::Closed) => return anyhow::Ok(()),
                         };
+                        let request_bytes =
+                            msg.payload().len().clamp(1, MAX_SHARD_REQUEST_BYTES) as u32;
+                        let byte_permit = match request_byte_budget
+                            .clone()
+                            .try_acquire_many_owned(request_bytes)
+                        {
+                            Ok(permit) => permit,
+                            Err(TryAcquireError::NoPermits) => {
+                                debug!(request_bytes, "shedding request, byte budget exhausted");
+                                metrics.record_request();
+                                metrics.record_request_error();
+                                reply_json_error(&msg, &transport, "overloaded").await;
+                                continue;
+                            }
+                            Err(TryAcquireError::Closed) => return anyhow::Ok(()),
+                        };
                         let request = handle(msg);
-                        requests.spawn(async move {
-                            let _permit = permit;
-                            request.await;
-                        });
+                        requests.spawn(
+                            async move {
+                                let _permit = permit;
+                                let _byte_permit = byte_permit;
+                                request.await;
+                            }
+                            .in_current_span(),
+                        );
                     }
                 }
             }
@@ -354,7 +390,7 @@ where
             warn!(error = %error, subject, "failed to flush replies while draining");
         }
         anyhow::Ok(())
-    });
+    }.in_current_span());
 
     tokio::select! {
         result = tasks.join_next() => {
@@ -365,7 +401,7 @@ where
                 None => Ok(()),
             }
         }
-        _ = shutdown => {
+        _ = shutdown.cancelled() => {
             info!("shutting down, beginning graceful drain");
 
             is_serving.store(false, Ordering::SeqCst);
@@ -477,8 +513,11 @@ mod tests {
         let transport = InMemoryTransport::new();
         let config = ServiceConfig::for_test(Mode::Shard, 0, 1);
         let shard_transport = transport.clone();
-        let shard_task =
-            tokio::spawn(async move { run_shard(&config, EchoShard, shard_transport).await });
+        let shutdown = CancellationToken::new();
+        let shard_shutdown = shutdown.clone();
+        let shard_task = tokio::spawn(async move {
+            run_shard(&config, EchoShard, shard_transport, shard_shutdown).await
+        });
 
         tokio::time::sleep(Duration::from_millis(25)).await;
 
@@ -507,6 +546,11 @@ mod tests {
             .unwrap();
         assert_eq!(json_response, br#"{"key":"b"}"#);
 
-        shard_task.abort();
+        shutdown.cancel();
+        tokio::time::timeout(Duration::from_secs(25), shard_task)
+            .await
+            .expect("shard stops after cancel")
+            .unwrap()
+            .unwrap();
     }
 }

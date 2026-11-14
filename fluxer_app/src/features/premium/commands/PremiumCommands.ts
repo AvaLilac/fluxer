@@ -14,8 +14,11 @@ import {
 } from '@app/features/premium/utils/PremiumMessageDescriptors';
 import {openExternalUrl} from '@app/features/ui/utils/NativeUtils';
 import Users from '@app/features/user/state/Users';
+import type {CreateCheckoutSessionRequest} from '@fluxer/schema/src/domains/premium/GiftCodeSchemas';
 import type {
 	CurrentSubscriptionPriceResponse,
+	PlutoniumWithdrawalListResponse,
+	PlutoniumWithdrawRequest,
 	PremiumStateResponse,
 	PriceIdsResponse,
 	SelfServeRefundResponse,
@@ -51,13 +54,17 @@ function checkoutSessionBody(
 	priceId: string,
 	countryCode: string | undefined,
 	isGift: boolean,
-	paymentMethod?: CheckoutPaymentMethod,
-): Record<string, string> {
+	paymentMethod: CheckoutPaymentMethod | undefined,
+	isBusiness: boolean,
+	cnpj: string | undefined,
+): CreateCheckoutSessionRequest {
 	return {
 		price_id: priceId,
 		...(countryCode ? {country_code: countryCode} : {}),
 		...(countryCode ? {client_geoip_country_code: countryCode} : {}),
 		...(paymentMethod && !isGift ? {payment_method: paymentMethod} : {}),
+		...(isBusiness ? {is_business: true} : {}),
+		...(isBusiness && cnpj ? {cnpj} : {}),
 	};
 }
 
@@ -145,7 +152,7 @@ export async function setPremiumPerksDisabled(disabled: boolean): Promise<Premiu
 export async function createCustomerPortalSession(): Promise<string> {
 	try {
 		const response = await http.post<UrlResponse>(Endpoints.PREMIUM_CUSTOMER_PORTAL);
-		logger.info('Customer portal session created');
+		logger.debug('Customer portal session created');
 		return response.body.url;
 	} catch (error) {
 		logger.error('Customer portal session creation failed', error);
@@ -160,13 +167,15 @@ export async function createCheckoutSession(
 	countryCode?: string,
 	isGift: boolean = false,
 	paymentMethod?: CheckoutPaymentMethod,
+	isBusiness: boolean = false,
+	cnpj?: string,
 ): Promise<string> {
 	try {
 		const country = normalizedCountryCode(countryCode);
 		const response = await http.post<UrlResponse>(checkoutEndpoint(isGift), {
-			body: checkoutSessionBody(priceId, country, isGift, paymentMethod),
+			body: checkoutSessionBody(priceId, country, isGift, paymentMethod, isBusiness, cnpj),
 		});
-		logger.info('Checkout session created', {priceId, countryCode, isGift, paymentMethod});
+		logger.debug('Checkout session created', {priceId, countryCode, isGift, paymentMethod, isBusiness});
 		return response.body.url;
 	} catch (error) {
 		logger.error('Checkout session creation failed', error);
@@ -177,7 +186,7 @@ export async function createCheckoutSession(
 export async function cancelSubscriptionAtPeriodEnd(): Promise<void> {
 	try {
 		await post(Endpoints.PREMIUM_CANCEL_SUBSCRIPTION);
-		logger.info('Subscription set to cancel at period end');
+		logger.debug('Subscription set to cancel at period end');
 	} catch (error) {
 		logger.error('Failed to cancel subscription at period end', error);
 		throw error;
@@ -187,7 +196,7 @@ export async function cancelSubscriptionAtPeriodEnd(): Promise<void> {
 export async function reactivateSubscription(): Promise<void> {
 	try {
 		await post(Endpoints.PREMIUM_REACTIVATE_SUBSCRIPTION);
-		logger.info('Subscription reactivated');
+		logger.debug('Subscription reactivated');
 	} catch (error) {
 		logger.error('Failed to reactivate subscription', error);
 		throw error;
@@ -197,25 +206,20 @@ export async function reactivateSubscription(): Promise<void> {
 export async function endPremiumGracePeriod(): Promise<void> {
 	try {
 		await post(Endpoints.PREMIUM_GRACE_END);
-		logger.info('Premium grace period ended');
+		logger.debug('Premium grace period ended');
 	} catch (error) {
 		logger.error('Failed to end premium grace period', error);
 		throw error;
 	}
 }
 
-export type SubscriptionBillingCycleChangeEffectiveAt = 'now' | 'period_end';
-
-export async function changeSubscriptionBillingCycle(
-	billingCycle: 'monthly' | 'yearly',
-	effectiveAt: SubscriptionBillingCycleChangeEffectiveAt = 'now',
-): Promise<void> {
+export async function changeSubscriptionBillingCycle(billingCycle: 'monthly' | 'yearly'): Promise<void> {
 	try {
 		await post(Endpoints.PREMIUM_CHANGE_SUBSCRIPTION, {
 			billing_cycle: billingCycle,
-			effective_at: effectiveAt,
+			effective_at: 'period_end',
 		});
-		logger.info('Subscription billing cycle changed', {billingCycle, effectiveAt});
+		logger.debug('Subscription billing cycle change scheduled', {billingCycle});
 	} catch (error) {
 		logger.error('Failed to change subscription billing cycle', error);
 		throw error;
@@ -225,7 +229,7 @@ export async function changeSubscriptionBillingCycle(
 export async function switchSubscriptionToListPrice(): Promise<SwitchToListPriceResponse> {
 	try {
 		const response = await http.post<SwitchToListPriceResponse>(Endpoints.PREMIUM_SWITCH_TO_LIST_PRICE);
-		logger.info('Subscription list price switch requested', response.body);
+		logger.debug('Subscription list price switch requested', response.body);
 		return response.body;
 	} catch (error) {
 		logger.error('Failed to switch subscription to the current list price', error);
@@ -236,7 +240,7 @@ export async function switchSubscriptionToListPrice(): Promise<SwitchToListPrice
 export async function cancelPendingSubscriptionChange(): Promise<void> {
 	try {
 		await post(Endpoints.PREMIUM_CANCEL_PENDING_SUBSCRIPTION_CHANGE);
-		logger.info('Pending subscription billing-cycle change canceled');
+		logger.debug('Pending subscription billing-cycle change canceled');
 	} catch (error) {
 		logger.error('Failed to cancel pending subscription billing-cycle change', error);
 		throw error;
@@ -246,7 +250,7 @@ export async function cancelPendingSubscriptionChange(): Promise<void> {
 export async function refundLatestPurchase(): Promise<SelfServeRefundResponse> {
 	try {
 		const response = await http.post<SelfServeRefundResponse>(Endpoints.PREMIUM_REFUND_LATEST);
-		logger.info('Self-serve refund issued', response.body);
+		logger.debug('Self-serve refund issued', response.body);
 		return response.body;
 	} catch (error) {
 		logger.error('Failed to issue self-serve refund', error);
@@ -254,10 +258,31 @@ export async function refundLatestPurchase(): Promise<SelfServeRefundResponse> {
 	}
 }
 
+export async function fetchWithdrawals(): Promise<PlutoniumWithdrawalListResponse> {
+	const response = await http.get<PlutoniumWithdrawalListResponse>(Endpoints.PREMIUM_WITHDRAWALS);
+	return response.body;
+}
+
+export async function withdrawPurchase(
+	purchaseId: string,
+	request: PlutoniumWithdrawRequest,
+): Promise<SelfServeRefundResponse> {
+	try {
+		const response = await http.post<SelfServeRefundResponse>(Endpoints.PREMIUM_WITHDRAW(purchaseId), {
+			body: request,
+		});
+		logger.debug('Plutonium purchase withdrawn', response.body);
+		return response.body;
+	} catch (error) {
+		logger.error('Plutonium withdrawal failed', error);
+		throw error;
+	}
+}
+
 export async function rejoinVisionaryGuild(): Promise<void> {
 	try {
 		await http.post(Endpoints.PREMIUM_VISIONARY_REJOIN);
-		logger.info('Visionary guild rejoin requested');
+		logger.debug('Visionary guild rejoin requested');
 	} catch (error) {
 		logger.error('Failed to rejoin Visionary guild', error);
 		throw error;

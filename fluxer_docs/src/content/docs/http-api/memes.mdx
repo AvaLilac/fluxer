@@ -6,11 +6,11 @@ description: Routes for saving, listing, changing and deleting your memes, and f
 
 import RouteHeader from '@/components/RouteHeader.astro';
 
-A meme is an image, video or audio file you save to your account. Fluxer keeps its own copy, so the meme still works after the source message or URL is gone. Bot tokens get 403 `ACCESS_DENIED` on these routes, and you send a saved meme with `favorite_meme_id` in [Create message](/http-api/messages/#create-message).
+A meme is an image, video or audio file you save to your account. Fluxer keeps its own copy, and the meme still works after the source message or URL is gone. Bot tokens get 403 `ACCESS_DENIED` on these routes, and you send a saved meme with `favorite_meme_id` in [Create message](/http-api/messages/#create-message).
 
 ## Limits
 
-You can save up to `max_favorite_memes` memes (default 50) with up to `max_favorite_meme_tags` tags each (default 10). See [instance limits](/http-api/instance/#limit-keys). Fluxer compares the stored bytes, so saving a file you already have returns `MEDIA_ALREADY_IN_FAVORITE_MEMES`, even from a different URL or message.
+You can save up to `max_favorite_memes` memes (default 50) with up to `max_favorite_meme_tags` tags each (default 10). See [instance limits](/http-api/instance/#limit-keys). Fluxer compares the stored bytes, and saving a file you already have returns `MEDIA_ALREADY_IN_FAVORITE_MEMES`, even from a different URL or message.
 
 ## Meme object
 
@@ -39,8 +39,9 @@ A meme object is one saved file. You can change only `name`, `alt_text` and `tag
 | gif_provider<sup>2</sup> | ?string | The name of the GIF provider that issued `gif_slug` |
 | media<sup>3</sup> | ?map[string, [GIF media format](#gif-media-format-object) object] | The provider formats for a GIF-sourced meme |
 | placeholder | ?string | The thumbhash placeholder recorded at save time |
+| nsfw | boolean | Whether the media is flagged as explicit, from the source message or the media scan |
 
-<sup>1</sup> A new [signed attachment URL](/http-api/messages/#signed-attachment-urls) on every read
+<sup>1</sup> A new [signed attachment URL](/http-api/messages/#signed-attachment-urls) on every read, or an [attachment URL on the API](/http-api/messages/#attachment-urls-on-the-api) that only you can open
 
 <sup>2</sup> Both are set or both are null. The value is `klipy` or `tenor`
 
@@ -67,7 +68,8 @@ A meme object is one saved file. You can change only `name`, `alt_text` and `tag
   "is_gifv": true,
   "gif_slug": "party-parrot-1234",
   "gif_provider": "klipy",
-  "placeholder": "3PcNNYYONWQPFxrsUeUcRh4"
+  "placeholder": "3PcNNYYONWQPFxrsUeUcRh4",
+  "nsfw": false
 }
 ```
 
@@ -209,7 +211,7 @@ Copies one attachment or embed asset from a message you can read into your colle
 | 400 | [error response](/http-api/#error-response) | `INVALID_FORM_BODY`<sup>3</sup> when the body or selection fails validation |
 | 400 | [error response](/http-api/#error-response) | `MEDIA_METADATA_ERROR` when the media cannot be read |
 | 400 | [error response](/http-api/#error-response) | `MAX_FAVORITE_MEMES` when the collection is full |
-| 403 | [error response](/http-api/#error-response) | `MISSING_PERMISSIONS`, `MISSING_ACCESS` or `NSFW_CONTENT_AGE_RESTRICTED` when you can't view the channel or aren't verified |
+| 403 | [error response](/http-api/#error-response) | `MISSING_PERMISSIONS`, `MISSING_ACCESS` or `NSFW_CONTENT_AGE_RESTRICTED` when you can't see the channel or it's age restricted |
 
 <sup>3</sup> The validation code is `ATTACHMENT_ID_NOT_FOUND_IN_MESSAGE`, `EMBED_INDEX_OUT_OF_BOUNDS`, `NO_VALID_MEDIA_IN_MESSAGE`, `MEDIA_ALREADY_IN_FAVORITE_MEMES` or `MAX_FAVORITE_MEME_TAGS_EXCEEDED`
 
@@ -284,7 +286,7 @@ The rate limit is 30 requests per 10 seconds, on the `favorite_meme:delete` buck
 
 <RouteHeader method="POST" path="/v1/users/@me/favorite-gifs/resolve" />
 
-Looks up GIF URLs and returns a [resolved GIF entry](#resolved-gif-entry-object) for each one without saving anything. A URL Fluxer can't find still gets an entry, with an empty `media` map.
+Looks up GIF URLs and returns a [resolved GIF entry](#resolved-gif-entry-object) for each one without saving anything. A URL Fluxer can't find still gets an entry, with an empty `media` map. When [attachment URLs point at the API](/http-api/messages/#attachment-urls-on-the-api), an attachment you can't read gets that empty entry too, and the entries for attachments you can read point at the API.
 
 ### Request headers
 

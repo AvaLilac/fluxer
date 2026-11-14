@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {isGuardedAttachmentUrl} from '@app/api/attachment/AttachmentPublicUrl';
 import {stripOwnAttachmentSignature} from '@app/api/attachment/AttachmentUrls';
 import type {ChannelID, MessageID} from '@app/api/BrandedTypes';
 import type {RichEmbedMediaWithMetadata} from '@app/api/channel/EmbedTypes';
@@ -358,6 +359,7 @@ export class EmbedService {
 		metadata: MediaProxyMetadataResponse | null;
 	}> {
 		const stored = stripOwnAttachmentSignature(url);
+		if (isGuardedAttachmentUrl(url)) return {url: stored, metadata: null};
 		const directMetadata = await this.mediaService.getMetadata({
 			type: 'external',
 			url,
@@ -366,11 +368,14 @@ export class EmbedService {
 		if (this.isRenderableMediaType(directMetadata?.content_type)) {
 			return {url: stored, metadata: directMetadata};
 		}
-		const unfurled = await this.unfurlerService.unfurl(url, nsfwMode);
+		const unfurled = await this.unfurlerService.unfurl(url, nsfwMode).catch((error: unknown) => {
+			Logger.warn({error, url}, 'Failed to unfurl embed media URL, keeping it without metadata');
+			return [];
+		});
 		for (const embed of unfurled) {
 			const candidates = [embed.video?.url, embed.audio?.url, embed.image?.url, embed.thumbnail?.url];
 			for (const candidate of candidates) {
-				if (!candidate || candidate === url) continue;
+				if (!candidate || candidate === url || isGuardedAttachmentUrl(candidate)) continue;
 				const candidateMetadata = await this.mediaService.getMetadata({
 					type: 'external',
 					url: candidate,
@@ -395,7 +400,9 @@ export class EmbedService {
 	): Promise<EmbedAuthor | null> {
 		if (!author) return null;
 		let iconUrl: string | null = null;
-		if (author.icon_url) {
+		if (author.icon_url && isGuardedAttachmentUrl(author.icon_url)) {
+			iconUrl = stripOwnAttachmentSignature(author.icon_url);
+		} else if (author.icon_url) {
 			const metadata = await this.mediaService.getMetadata({
 				type: 'external',
 				url: author.icon_url,
@@ -416,7 +423,9 @@ export class EmbedService {
 	): Promise<EmbedFooter | null> {
 		if (!footer) return null;
 		let iconUrl: string | null = null;
-		if (footer.icon_url) {
+		if (footer.icon_url && isGuardedAttachmentUrl(footer.icon_url)) {
+			iconUrl = stripOwnAttachmentSignature(footer.icon_url);
+		} else if (footer.icon_url) {
 			const metadata = await this.mediaService.getMetadata({
 				type: 'external',
 				url: footer.icon_url,

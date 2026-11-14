@@ -56,6 +56,7 @@ import type {
 	InstanceAppPublic,
 	InstanceBuiltInGuildBadgeImages,
 	InstanceCommunity,
+	InstanceConnectionProvider,
 	InstanceFeatures,
 	InstanceGuildBadge,
 	InstanceHiddenBuiltInGuildBadges,
@@ -759,6 +760,7 @@ class RuntimeConfig {
 				gif_enabled: config.policy.services_resolved.gif_enabled,
 				youtube_enabled: config.policy.services_resolved.youtube_enabled,
 				bluesky_enabled: config.policy.services_resolved.bluesky_enabled,
+				connection_providers: current.services.connection_providers,
 			},
 			appPublic,
 			notice: config.notice,
@@ -950,6 +952,10 @@ class RuntimeConfig {
 
 	get blueskyConnectionsEnabled(): boolean {
 		return this.services.bluesky_enabled;
+	}
+
+	get connectionProviders(): ReadonlyArray<InstanceConnectionProvider> {
+		return this.services.connection_providers;
 	}
 
 	get marketingHost(): string {

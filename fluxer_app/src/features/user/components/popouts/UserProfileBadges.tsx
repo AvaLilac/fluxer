@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {handleExternalLinkAuxClick} from '@app/features/messaging/utils/ExternalLinkUtils';
 import * as ImageCacheUtils from '@app/features/messaging/utils/ImageCacheUtils';
+import {openInAppOrExternalUrl} from '@app/features/messaging/utils/InAppLinkUtils';
 import * as PremiumModalCommands from '@app/features/premium/commands/PremiumModalCommands';
 import * as ModalCommands from '@app/features/ui/commands/ModalCommands';
 import FocusRing from '@app/features/ui/focus_ring/FocusRing';
 import {Tooltip} from '@app/features/ui/tooltip/Tooltip';
-import {handleExternalLinkClick} from '@app/features/ui/utils/NativeUtils';
 import {BadgeListModal} from '@app/features/user/components/modals/BadgeListModal';
 import styles from '@app/features/user/components/popouts/UserProfileBadges.module.css';
 import {profileBadgeImageUrl} from '@app/features/user/utils/ProfileUtils';
@@ -52,6 +53,7 @@ function openBadgeList(badges: ReadonlyArray<ProfileBadgeResponse>, dataFlx: str
 					caption: badge.caption ?? null,
 					title: badge.details?.title ?? badge.label,
 					lines: badge.details?.lines ?? [],
+					quote: badge.quote ?? null,
 					href: badge.href ?? null,
 				}))}
 				data-flx={`${dataFlx}.badge-list-modal`}
@@ -86,6 +88,31 @@ function useBadgeImagesReady(badges: ReadonlyArray<ProfileBadgeResponse>): boole
 	return settled || readyKey === key;
 }
 
+function ProfileBadgeQuote({quote, 'data-flx': dataFlx}: {quote: string; 'data-flx': string}) {
+	return (
+		<span className={styles.detailsQuote} dir="auto" data-flx={dataFlx}>
+			{`"${quote}"`}
+		</span>
+	);
+}
+
+function ProfileBadgeLabelTooltip({
+	label,
+	quote,
+	'data-flx': dataFlx,
+}: {
+	label: string;
+	quote: string;
+	'data-flx': string;
+}) {
+	return (
+		<div className={styles.details} data-flx={dataFlx}>
+			<span data-flx={`${dataFlx}.label`}>{label}</span>
+			<ProfileBadgeQuote quote={quote} data-flx={`${dataFlx}.quote`} />
+		</div>
+	);
+}
+
 function ProfileBadgeDetailsTooltip({
 	badge,
 	details,
@@ -115,6 +142,7 @@ function ProfileBadgeDetailsTooltip({
 					{line}
 				</span>
 			))}
+			{badge.quote && <ProfileBadgeQuote quote={badge.quote} data-flx={`${dataFlx}.quote`} />}
 		</div>
 	);
 }
@@ -166,7 +194,11 @@ export const UserProfileBadges: React.FC<UserProfileBadgesProps> = observer(
 						target="_blank"
 						rel="noopener noreferrer"
 						className={styles.link}
-						onClick={(event) => handleExternalLinkClick(event, href)}
+						onClick={(event) => {
+							event.preventDefault();
+							openInAppOrExternalUrl(href, {i18n});
+						}}
+						onAuxClick={(event) => handleExternalLinkAuxClick(event, href)}
 						data-flx={`${dataFlx}.link`}
 					>
 						{children}
@@ -202,12 +234,17 @@ export const UserProfileBadges: React.FC<UserProfileBadgesProps> = observer(
 							</span>
 						);
 					const details = badge.details ?? null;
-					const tooltipText =
-						details && !touch
-							? () => (
-									<ProfileBadgeDetailsTooltip badge={badge} details={details} data-flx={`${dataFlx}.tooltip-details`} />
-								)
-							: badge.label;
+					const quote = badge.quote ?? null;
+					let tooltipText: string | (() => React.ReactNode) = badge.label;
+					if (details && !touch) {
+						tooltipText = () => (
+							<ProfileBadgeDetailsTooltip badge={badge} details={details} data-flx={`${dataFlx}.tooltip-details`} />
+						);
+					} else if (quote) {
+						tooltipText = () => (
+							<ProfileBadgeLabelTooltip label={badge.label} quote={quote} data-flx={`${dataFlx}.tooltip-label`} />
+						);
+					}
 					return (
 						<Tooltip key={badge.key} text={tooltipText} maxWidth="xl" data-flx={`${dataFlx}.tooltip`}>
 							<FocusRing offset={-2} data-flx={`${dataFlx}.focus-ring`}>

@@ -69,10 +69,11 @@ const FALLBACK_STRINGS: Readonly<Record<string, string>> = Object.freeze({
 	'desktop.tray.disconnectFrom': 'Disconnect from {channel}',
 	'desktop.tray.disconnectVoice': 'Disconnect from voice',
 	'desktop.tray.checkForUpdates': 'Check for updates',
-	'desktop.tray.updateNow': 'Update {appName} now',
+	'desktop.tray.reloadToUpdate': 'Reload {appName} to update',
+	'desktop.tray.restartToUpdate': 'Restart {appName} to update',
 	'desktop.appMenu.checkForUpdates': 'Check for updates...',
-	'desktop.update.availableMessage': 'An update for {appName} is available.',
-	'desktop.update.availableDetail': '{appName} will close, install the update and open again.',
+	'desktop.update.availableMessage': 'An update for {appName} is ready to install.',
+	'desktop.update.availableDetail': '{appName} will restart to finish updating.',
 	'desktop.update.reloadDetail': '{appName} will reload to finish updating.',
 	'desktop.update.install': 'Update now',
 	'desktop.update.later': 'Later',
@@ -133,6 +134,7 @@ const FALLBACK_STRINGS: Readonly<Record<string, string>> = Object.freeze({
 	'desktop.linuxEntry.comment': 'Instant messaging and VoIP',
 });
 const STORAGE_FILE_NAME = 'native-strings.json';
+const LOCALE_TAG_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{1,8})*$/;
 
 interface PersistedStrings {
 	locale: string;
@@ -169,13 +171,14 @@ function writePersisted(payload: PersistedStrings): void {
 
 export function initializeMainI18n(): void {
 	const persisted = readPersisted();
-	if (!persisted) return;
+	if (!persisted || !LOCALE_TAG_PATTERN.test(persisted.locale)) return;
 	currentLocale = persisted.locale;
 	currentStrings = {...FALLBACK_STRINGS, ...persisted.strings};
 	logger.info('Loaded persisted native strings', {locale: currentLocale, count: Object.keys(persisted.strings).length});
 }
 
 export function setNativeStrings(locale: string, strings: Record<string, string>): void {
+	if (!LOCALE_TAG_PATTERN.test(locale)) return;
 	const next = {...FALLBACK_STRINGS, ...strings};
 	if (locale === currentLocale && shallowEqualStrings(currentStrings, next)) {
 		return;

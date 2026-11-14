@@ -149,6 +149,9 @@ fn instant_account_inactive_reason(
         InstantAccountAvailability::ApprovalRequired => {
             Some("Inactive: new accounts need approval")
         }
+        InstantAccountAvailability::EmailDomainsRestricted => {
+            Some("Inactive: sign-ups need an allowed email domain")
+        }
     }
 }
 
@@ -265,7 +268,8 @@ pub(super) fn accounts_section(
                             (format!(
                                 "New people type the name others see and start right away. {name_source}, \
                                  and they {} later to keep the account. This works while registration \
-                                 is open, or through a registration link that does not need approval.",
+                                 is open and no allowed email domains are set, or through a registration \
+                                 link that does not need approval.",
                                 wording.step
                             ))
                         } @else {
@@ -290,7 +294,8 @@ pub(super) fn accounts_section(
                     ))
                     p class="text-xs text-neutral-500" {
                         "With \u{201c}Don't ask\u{201d}, new accounts do not store a date of birth and \
-                         are treated as adults."
+                         are treated as adults. Accounts that gave a date of birth under 18 still \
+                         cannot see mature content."
                     }
                     @if !identity.mode.is_username() {
                         (choice_select(

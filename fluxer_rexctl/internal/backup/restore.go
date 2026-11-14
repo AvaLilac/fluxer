@@ -20,7 +20,9 @@ import (
 	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/deploy"
 	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/engine"
 	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/envfile"
+	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/host"
 	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/instance"
+	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/native"
 	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/release"
 	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/stack"
 )
@@ -76,6 +78,72 @@ func (e *PullError) Error() string {
 
 func (e *PullError) Unwrap() error { return e.Err }
 
+const DiskReserve = 1_000_000_000
+
+type RestoreSpaceError struct {
+	Dir       string
+	Need      uint64
+	Available uint64
+}
+
+func (e *RestoreSpaceError) Error() string {
+	return fmt.Sprintf("backup: restoring needs %d bytes in %s and %d are free", e.Need, e.Dir, e.Available)
+}
+
+func restoreDataNeed(m *Manifest) uint64 {
+	var n uint64
+	for _, en := range m.Entries {
+		n += uint64(max(en.Size, 0))
+		if m.Database != "" && en.Path == m.Database {
+			n += uint64(max(en.Size, 0))
+		}
+	}
+	return n
+}
+
+type restoreNeed struct {
+	path string
+	need uint64
+}
+
+func checkRestoreSpace(stores engine.Roots, dir string, pull, data uint64) error {
+	var disks []restoreNeed
+	for _, want := range []restoreNeed{{stores.Data, data}, {stores.Images, pull}, {dir, 0}} {
+		if want.path == "" {
+			continue
+		}
+		i := slices.IndexFunc(disks, func(d restoreNeed) bool { return sameDisk(d.path, want.path) })
+		if i >= 0 {
+			disks[i].need += want.need
+			continue
+		}
+		disks = append(disks, want)
+	}
+	for _, d := range disks {
+		if err := needFree(d.path, d.need+DiskReserve); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func needFree(path string, need uint64) error {
+	free, err := host.FreeDisk(path)
+	if err != nil || free >= need {
+		return nil
+	}
+	return &RestoreSpaceError{Dir: path, Need: need, Available: free}
+}
+
+func sameDisk(a, b string) bool {
+	x, errX := host.DiskID(a)
+	y, errY := host.DiskID(b)
+	if errX != nil || errY != nil {
+		return a == b
+	}
+	return x == y
+}
+
 func Restore(ctx context.Context, path, dir string, e *engine.Engine, opts RestoreOptions) (*instance.Instance, error) {
 	progress := opts.Progress
 	if progress == nil {
@@ -100,9 +168,13 @@ func Restore(ctx context.Context, path, dir string, e *engine.Engine, opts Resto
 	if err := checkProjectFree(ctx, e, m.Project, dir); err != nil {
 		return nil, err
 	}
+	var data uint64
+	if existing == nil {
+		data = restoreDataNeed(m)
+	}
 
 	progress(StagePulling)
-	if err := pullFromBackup(ctx, path, e, opts.OnEvent); err != nil {
+	if err := pullFromBackup(ctx, path, dir, e, m, data, opts.OnEvent); err != nil {
 		return nil, err
 	}
 
@@ -259,10 +331,11 @@ func readRestoreMarker(dir string) *restoreMarker {
 }
 
 func keptVolumes(m *Manifest) []string {
+	out := slices.Clone(m.Left)
 	if m.WithoutUploads() {
-		return []string{UploadsVolume}
+		out = append(out, m.Uploads.VolumeShort())
 	}
-	return nil
+	return out
 }
 
 func CheckUploadsInPlace(ctx context.Context, dir string, existing *instance.Instance, e *engine.Engine, m *Manifest) error {
@@ -415,7 +488,7 @@ func removeStaleImages(ctx context.Context, p *engine.Project, stale []string) {
 	}
 }
 
-func pullFromBackup(ctx context.Context, path string, e *engine.Engine, onEvent func(engine.Event)) error {
+func pullFromBackup(ctx context.Context, path, dir string, e *engine.Engine, m *Manifest, data uint64, onEvent func(engine.Event)) error {
 	staging, err := os.MkdirTemp("", "rexctl-restore-")
 	if err != nil {
 		return err
@@ -428,9 +501,16 @@ func pullFromBackup(ctx context.Context, path string, e *engine.Engine, onEvent 
 	if err != nil {
 		return err
 	}
+	if inst.Project() != m.Project {
+		return fmt.Errorf("%w: the backup's state names project %s and its manifest names %s", ErrDamaged, inst.Project(), m.Project)
+	}
 	p, err := deploy.Load(ctx, inst, e)
 	if err != nil {
 		return &PullError{Err: err}
+	}
+	images, _ := stack.EmbeddedImages()
+	if err := checkRestoreSpace(engine.Stores(dir, e, ""), dir, e.PullNeed(ctx, images, p.Images(), nil), data); err != nil {
+		return err
 	}
 	if err := p.Pull(ctx, onEvent); err != nil {
 		return &PullError{Err: err}
@@ -511,6 +591,87 @@ func extractFiles(path, dir string) error {
 				return err
 			}
 			return writeFile(target, r, os.FileMode(hdr.Mode).Perm(), rel == instance.EnvFileName)
+		}
+		return nil
+	})
+	if errors.Is(err, errStop) {
+		return nil
+	}
+	return err
+}
+
+const (
+	nativeSecretsName = "secrets.env"
+	maxStateSize      = 16 << 20
+)
+
+type NativeArchive struct {
+	Native bool
+	State  []byte
+}
+
+func FromNative(path string) (NativeArchive, error) {
+	name := FilesPrefix + instance.StateDirName + "/" + instance.StateFileName
+	var out NativeArchive
+	hasSecrets := false
+	err := walkArchive(path, func(hdr *tar.Header, r io.Reader) error {
+		if !strings.HasPrefix(hdr.Name, FilesPrefix) {
+			return errStop
+		}
+		hasSecrets = hasSecrets || hdr.Name == FilesPrefix+nativeSecretsName
+		if hdr.Name == name {
+			data, err := io.ReadAll(io.LimitReader(r, maxStateSize+1))
+			if err != nil {
+				return err
+			}
+			if len(data) > maxStateSize {
+				return fmt.Errorf("%w: %s is too large", ErrDamaged, hdr.Name)
+			}
+			out.State = data
+		}
+		return nil
+	})
+	if errors.Is(err, errStop) {
+		err = nil
+	}
+	if err != nil {
+		return out, err
+	}
+	if out.State == nil {
+		out.Native = hasSecrets
+		return out, nil
+	}
+	var st struct {
+		Runtime string `json:"runtime"`
+	}
+	if err := json.Unmarshal(out.State, &st); err != nil {
+		return out, fmt.Errorf("%w: %s: %v", ErrDamaged, name, err)
+	}
+	out.Native = st.Runtime == instance.RuntimeNative
+	return out, nil
+}
+
+func ExtractNativeFiles(path, dir string) error {
+	err := walkArchive(path, func(hdr *tar.Header, r io.Reader) error {
+		if !strings.HasPrefix(hdr.Name, FilesPrefix) {
+			return errStop
+		}
+		rel := strings.TrimSuffix(strings.TrimPrefix(hdr.Name, FilesPrefix), "/")
+		if rel == "" || !slices.ContainsFunc(native.InstanceFiles, func(f string) bool { return rel == f || strings.HasPrefix(rel, f+"/") }) {
+			return nil
+		}
+		if !filepath.IsLocal(filepath.FromSlash(rel)) {
+			return fmt.Errorf("%w: unsafe path %q", ErrDamaged, hdr.Name)
+		}
+		target := filepath.Join(dir, filepath.FromSlash(rel))
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			return os.MkdirAll(target, dirMode(hdr.Mode))
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+				return err
+			}
+			return writeFile(target, r, os.FileMode(hdr.Mode).Perm(), false)
 		}
 		return nil
 	})
@@ -648,7 +809,7 @@ func restoreData(ctx context.Context, path string, p *engine.Project, image stri
 		if !ok {
 			return &RestoreError{Part: short, Err: errors.New("the volume wasn't created")}
 		}
-		if short == UploadsVolume && v.bind != "" {
+		if uploadsVolume(short) && v.bind != "" {
 			uploadsBind = v.bind
 		}
 		pr, pw := io.Pipe()
@@ -743,7 +904,7 @@ func restoreData(ctx context.Context, path string, p *engine.Project, image stri
 
 func forgetUploadsID(bind string) error {
 	if err := os.Remove(filepath.Join(bind, UploadsIDFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return &RestoreError{Part: UploadsVolume, Err: err}
+		return &RestoreError{Part: "uploads", Err: err}
 	}
 	return nil
 }

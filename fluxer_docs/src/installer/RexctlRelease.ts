@@ -11,6 +11,8 @@ const CACHE_MS = 5 * 60 * 1000;
 const RETRY_MS = 30 * 1000;
 const FETCH_TIMEOUT_MS = 15 * 1000;
 const PAGES = 3;
+const MAX_ENTRIES = 256;
+const PINNED_RESERVE = 15;
 const CALVER = /^\d{4}\.\d{3,4}\.\d{1,6}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const ENGINE_VERSION = /^\d+\.\d+\.\d+$/;
@@ -27,6 +29,8 @@ export const REXCTL_TARGETS = [
 	{os: 'windows', arch: 'arm64'},
 ] as const;
 
+const NATIVE_ARCHES = ['amd64', 'arm64'] as const;
+
 export interface RexctlAsset {
 	readonly os: string;
 	readonly arch: string;
@@ -42,6 +46,7 @@ export interface RexctlRelease {
 	readonly min_docker: string;
 	readonly state_schema: number;
 	readonly assets: ReadonlyArray<RexctlAsset>;
+	readonly dist: ReadonlyArray<RexctlAsset>;
 	readonly compose_url: string;
 }
 
@@ -66,6 +71,9 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+let githubRetryAt = 0;
+let rateLimitRemaining = Number.POSITIVE_INFINITY;
+let rateLimitResetAt = 0;
 
 export class ResolverUnavailableError extends Error {}
 
@@ -82,6 +90,10 @@ function archiveName(version: string, os: string, arch: string): string {
 	return `rexctl_${version}_${os}_${arch}.${extension}`;
 }
 
+function nativeName(version: string, arch: string): string {
+	return `fluxer-${version}-linux-${arch}.tar.zst`;
+}
+
 async function getJSON<T>(url: string): Promise<T | null> {
 	const response = await fetch(url, {
 		headers: {
@@ -91,10 +103,19 @@ async function getJSON<T>(url: string): Promise<T | null> {
 		},
 		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 	});
+	const remaining = Number.parseInt(response.headers.get('x-ratelimit-remaining') ?? '', 10);
+	const reset = Number.parseInt(response.headers.get('x-ratelimit-reset') ?? '', 10);
+	if (Number.isFinite(remaining) && Number.isFinite(reset)) {
+		rateLimitRemaining = remaining;
+		rateLimitResetAt = reset * 1000;
+	}
 	if (response.status === 404) {
 		return null;
 	}
 	if (!response.ok) {
+		const now = Date.now();
+		const exhausted = (response.status === 403 || response.status === 429) && remaining === 0;
+		githubRetryAt = exhausted && rateLimitResetAt > now ? rateLimitResetAt : now + RETRY_MS;
 		throw new ResolverUnavailableError(`GitHub answered ${response.status} for ${url}`);
 	}
 	return (await response.json()) as T;
@@ -139,12 +160,7 @@ function hasEveryArchive(release: GitHubRelease, version: string): boolean {
 async function toRexctlRelease(release: GitHubRelease, version: string): Promise<RexctlRelease | null> {
 	const byName = new Map(release.assets.map((asset) => [asset.name, asset]));
 	let checksums: Map<string, string> | null = null;
-	const assets: Array<RexctlAsset> = [];
-	for (const target of REXCTL_TARGETS) {
-		const asset = byName.get(archiveName(version, target.os, target.arch));
-		if (!asset) {
-			return null;
-		}
+	const sha256Of = async (asset: GitHubAsset): Promise<string | null> => {
 		let sha256 = asset.digest?.startsWith('sha256:') ? asset.digest.slice('sha256:'.length) : '';
 		if (!SHA256.test(sha256)) {
 			if (checksums === null) {
@@ -154,10 +170,24 @@ async function toRexctlRelease(release: GitHubRelease, version: string): Promise
 			}
 			sha256 = checksums.get(asset.name) ?? '';
 		}
-		if (!SHA256.test(sha256)) {
+		return SHA256.test(sha256) ? sha256 : null;
+	};
+	const assets: Array<RexctlAsset> = [];
+	for (const target of REXCTL_TARGETS) {
+		const asset = byName.get(archiveName(version, target.os, target.arch));
+		const sha256 = asset ? await sha256Of(asset) : null;
+		if (!asset || sha256 === null) {
 			return null;
 		}
 		assets.push({os: target.os, arch: target.arch, url: asset.browser_download_url, sha256});
+	}
+	const dist: Array<RexctlAsset> = [];
+	for (const arch of NATIVE_ARCHES) {
+		const asset = byName.get(nativeName(version, arch));
+		const sha256 = asset ? await sha256Of(asset) : null;
+		if (asset && sha256 !== null) {
+			dist.push({os: 'linux', arch, url: asset.browser_download_url, sha256});
+		}
 	}
 	let minFrom = '';
 	let schemaChanged = true;
@@ -205,6 +235,7 @@ async function toRexctlRelease(release: GitHubRelease, version: string): Promise
 		min_docker: minDocker,
 		state_schema: stateSchema,
 		assets,
+		dist,
 		compose_url: byName.get(`${COMPOSE_ASSET_PREFIX}${version}.tar.gz`)?.browser_download_url ?? '',
 	};
 }
@@ -241,19 +272,33 @@ async function resolveVersion(version: string): Promise<RexctlRelease | null> {
 	return toRexctlRelease(release, version);
 }
 
+function evictOldest(): void {
+	if (cache.size < MAX_ENTRIES) {
+		return;
+	}
+	for (const [key, entry] of cache) {
+		if (key !== 'latest' && !entry.pending) {
+			cache.delete(key);
+			return;
+		}
+	}
+}
+
 export async function resolveRexctlRelease(version: string | null): Promise<RexctlRelease | null> {
 	const key = version ?? 'latest';
 	const now = Date.now();
 	let entry = cache.get(key);
 	if (!entry) {
 		entry = {value: null, fetchedAt: 0, failedAt: 0, pending: null};
+		evictOldest();
 		cache.set(key, entry);
 	}
 	const current = entry;
 	if (now - current.fetchedAt < CACHE_MS) {
 		return current.value;
 	}
-	if (now - current.failedAt < RETRY_MS) {
+	const quotaReserved = version !== null && rateLimitRemaining < PINNED_RESERVE && now < rateLimitResetAt;
+	if (!current.pending && (now - current.failedAt < RETRY_MS || now < githubRetryAt || quotaReserved)) {
 		if (current.value) {
 			return current.value;
 		}

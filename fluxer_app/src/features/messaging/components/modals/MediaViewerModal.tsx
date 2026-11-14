@@ -16,10 +16,12 @@ import type {ForwardModalSuccess} from '@app/features/messaging/components/modal
 import {MediaModal} from '@app/features/messaging/components/modals/MediaModal';
 import styles from '@app/features/messaging/components/modals/MediaViewerModal.module.css';
 import {getMediaViewerPortalRoot} from '@app/features/messaging/components/modals/MediaViewerPortal';
+import {useApiAttachmentSrc} from '@app/features/messaging/hooks/useApiAttachmentSources';
 import {useAttachmentRefreshOnError} from '@app/features/messaging/hooks/useAttachmentRefreshOnError';
 import {useDeleteAttachment} from '@app/features/messaging/hooks/useDeleteAttachment';
 import {useMediaFavorite} from '@app/features/messaging/hooks/useMediaFavorite';
 import type {Message} from '@app/features/messaging/models/MessagingMessage';
+import apiAttachmentMedia, {fetchedApiAttachmentKey} from '@app/features/messaging/state/ApiAttachmentMedia';
 import AttachmentUrlRefresher from '@app/features/messaging/state/AttachmentUrlRefresher';
 import {attachmentUrlMayNeedRefresh} from '@app/features/messaging/utils/AttachmentCdnUrl';
 import {formatAttachmentDate} from '@app/features/messaging/utils/AttachmentExpiryUtils';
@@ -49,6 +51,7 @@ import LayerManager from '@app/features/ui/state/LayerManager';
 import MediaViewer, {type MediaViewerItem} from '@app/features/ui/state/MediaViewer';
 import MobileLayout from '@app/features/ui/state/MobileLayout';
 import {snapMediaProxyImageSize} from '@app/features/user/utils/AvatarUtils';
+import {getFormattingLocale} from '@app/features/user/utils/LocaleUtils';
 import {AudioPlayer} from '@app/features/voice/components/media_player/components/AudioPlayer';
 import {VideoPlayer} from '@app/features/voice/components/media_player/components/VideoPlayer';
 import {msg} from '@lingui/core/macro';
@@ -140,9 +143,11 @@ const RenderReadyImage: FC<RenderReadyImageProps> = ({
 	className,
 	onError,
 	onLoad,
-	src,
+	src: requestedSrc,
 	...imageProps
 }: RenderReadyImageProps) => {
+	const displaySrc = useApiAttachmentSrc(requestedSrc ?? '');
+	const src = requestedSrc === undefined ? undefined : displaySrc;
 	const [isReady, setIsReady] = useState(false);
 	const [renderedSource, setRenderedSource] = useState(src);
 	const [decodedBeforeSwap, setDecodedBeforeSwap] = useState(() => ImageCacheUtils.hasImage(src));
@@ -322,7 +327,10 @@ const MediaViewerModalComponent: FC = observer(() => {
 	const adjacentPinUrls = resolveAdjacentPinUrls(freshItems, currentIndex, isOpen);
 	useEffect(() => {
 		if (adjacentPinUrls.length === 0) return;
-		const unpinCallbacks = adjacentPinUrls.split('\n').map((url) => ImageCacheUtils.pinImage(url));
+		const unpinCallbacks = adjacentPinUrls.split('\n').map((url) => {
+			const fetchedKey = fetchedApiAttachmentKey(url);
+			return fetchedKey === null ? ImageCacheUtils.pinImage(url) : apiAttachmentMedia.retain(fetchedKey);
+		});
 		return () => {
 			for (const unpin of unpinCallbacks) unpin();
 		};
@@ -506,6 +514,9 @@ const MediaViewerModalComponent: FC = observer(() => {
 	const imageSrc = useMemo(() => (currentItem ? buildViewerMediaURL(currentItem) : ''), [currentItem]);
 	const handleImageError = useAttachmentRefreshOnError(imageSrc);
 	const handleGifvVideoError = useAttachmentRefreshOnError(currentItem?.src);
+	const gifvVideoSrc = currentItem?.type === 'gifv' && !currentGifvIsActualGif ? currentItem.src : undefined;
+	const gifvDisplaySrc = useApiAttachmentSrc(gifvVideoSrc ?? '', gifvVideoSrc !== undefined);
+	const gifvPlaybackSrc = gifvVideoSrc === undefined ? undefined : gifvDisplaySrc;
 	const freshItemSources = freshItems.map((item) => item.src).join('\n');
 	const thumbnails = useMemo(() => {
 		const snappedThumbnailSize = snapMediaProxyImageSize(MEDIA_VIEWER_THUMBNAIL_SIZE);
@@ -540,7 +551,8 @@ const MediaViewerModalComponent: FC = observer(() => {
 			? `${currentItem.naturalWidth}×${currentItem.naturalHeight}`
 			: undefined;
 	const fileName = currentItem.filename || currentItem.originalSrc.split('/').pop()?.split('?')[0] || 'media';
-	const fileSize = currentItem.fileSize != null ? formatFileSize(i18n.locale, currentItem.fileSize) : undefined;
+	const fileSize =
+		currentItem.fileSize != null ? formatFileSize(getFormattingLocale(), currentItem.fileSize) : undefined;
 	const expiryInfo =
 		currentItem.expiresAt && currentItem.expiresAt.length > 0
 			? {
@@ -585,7 +597,7 @@ const MediaViewerModalComponent: FC = observer(() => {
 			return (
 				<video
 					key={currentItem.src}
-					src={currentItem.src}
+					src={gifvPlaybackSrc}
 					className={styles.gifvVideo}
 					style={{
 						objectFit: 'contain',

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import * as Modal from '@app/features/app/components/dialogs/Modal';
-import {handleExternalLinkClick} from '@app/features/ui/utils/NativeUtils';
+import {handleExternalLinkAuxClick} from '@app/features/messaging/utils/ExternalLinkUtils';
+import {openInAppOrExternalUrl} from '@app/features/messaging/utils/InAppLinkUtils';
 import styles from '@app/features/user/components/modals/BadgeListModal.module.css';
 import {msg} from '@lingui/core/macro';
 import {useLingui} from '@lingui/react/macro';
@@ -18,6 +19,7 @@ export interface BadgeListItem {
 	readonly caption: string | null;
 	readonly title: string;
 	readonly lines: ReadonlyArray<string>;
+	readonly quote: string | null;
 	readonly href: string | null;
 }
 
@@ -60,6 +62,11 @@ export const BadgeListModal = observer(function BadgeListModal({
 											{line}
 										</span>
 									))}
+									{item.quote && (
+										<span className={styles.quote} dir="auto" data-flx={`${dataFlx}.quote`}>
+											{`"${item.quote}"`}
+										</span>
+									)}
 								</span>
 							</>
 						);
@@ -72,7 +79,11 @@ export const BadgeListModal = observer(function BadgeListModal({
 										target="_blank"
 										rel="noopener noreferrer"
 										className={styles.row}
-										onClick={(event) => handleExternalLinkClick(event, href)}
+										onClick={(event) => {
+											event.preventDefault();
+											openInAppOrExternalUrl(href, {i18n});
+										}}
+										onAuxClick={(event) => handleExternalLinkAuxClick(event, href)}
 										data-flx={`${dataFlx}.link`}
 									>
 										{body}

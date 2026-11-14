@@ -29,6 +29,7 @@ import {modal} from '@app/features/ui/commands/ModalCommands';
 import {Input} from '@app/features/ui/components/form/FormInput';
 import {Spinner} from '@app/features/ui/components/Spinner';
 import Users from '@app/features/user/state/Users';
+import {getFormattingLocale} from '@app/features/user/utils/LocaleUtils';
 import {canCropFormat} from '@app/features/voice/utils/MediaCapabilities';
 import {getAcceptString} from '@fluxer/constants/src/AssetFormatPolicy';
 import {Permissions} from '@fluxer/constants/src/ChannelConstants';
@@ -49,7 +50,7 @@ const NO_EMOJI_SLOTS_AVAILABLE_DESCRIPTOR = msg({
 	comment: 'Empty-state text in the guild emoji tab.',
 });
 const EMOJI_SLOTS_FULL_DESCRIPTION_DESCRIPTOR = msg({
-	message: "You've reached the maximum number of emojis. Delete some existing emojis to make room.",
+	message: "You can't add more emojis. Delete some existing emojis to make room.",
 	comment: 'Emoji upload limit message in community emoji settings. Do not suggest that communities can be upgraded.',
 });
 const FAILED_TO_PREPARE_EMOJIS_DESCRIPTOR = msg({
@@ -179,7 +180,7 @@ const GuildEmojiTab: React.FC<{guildId: string}> = observer(function GuildEmojiT
 	const maxEmojis = guild?.maxEmojis ?? MAX_GUILD_EMOJIS;
 	const currentEmojiCount = emojis.length;
 	const maxEmojiSize = guild?.maxEmojiSize ?? EMOJI_MAX_SIZE;
-	const emojiMaxSizeLabel = formatFileSize(i18n.locale, maxEmojiSize);
+	const emojiMaxSizeLabel = formatFileSize(getFormattingLocale(), maxEmojiSize);
 	const canModifyEmoji = useCallback(
 		(emoji: GuildEmojiWithUser): boolean => {
 			if (canManageExpressions) return true;
@@ -288,7 +289,7 @@ const GuildEmojiTab: React.FC<{guildId: string}> = observer(function GuildEmojiT
 			);
 			const preparedEmojis: Array<{name: string; image: string; file: File}> = [];
 			const preparationFailures: Array<EmojiUploadFailure> = [];
-			const maxEmojiSizeLabel = formatFileSize(i18n.locale, maxEmojiSize);
+			const maxEmojiSizeLabel = formatFileSize(getFormattingLocale(), maxEmojiSize);
 			for (const file of filesWithinSlots) {
 				try {
 					const base64Image = await ImageCropUtils.optimizeEmojiImage(file, maxEmojiSize, 128);
@@ -303,7 +304,7 @@ const GuildEmojiTab: React.FC<{guildId: string}> = observer(function GuildEmojiT
 										? EMOJI_PROCESSED_FILE_TOO_LARGE_DESCRIPTOR
 										: EMOJI_SOURCE_FILE_TOO_LARGE_DESCRIPTOR,
 									{
-										fileSize: formatFileSize(i18n.locale, error.actualSizeBytes),
+										fileSize: formatFileSize(getFormattingLocale(), error.actualSizeBytes),
 										maxSize: maxEmojiSizeLabel,
 									},
 								)

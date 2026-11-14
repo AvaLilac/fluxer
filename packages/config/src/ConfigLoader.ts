@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {createECDH} from 'node:crypto';
+import path from 'node:path';
 import {isConfigObject} from '@fluxer/config/src/config_loader/ConfigObject';
 import {buildNamedFluxerEnvOverrides, readEnvValue} from '@fluxer/config/src/config_loader/EnvironmentOverrides';
 import {
@@ -14,7 +15,9 @@ import {
 import {
 	ACCOUNT_IDENTITY_MODE_NAMES,
 	CACHE_PURGE_ADAPTER_NAMES,
+	KV_MODE_NAMES,
 	type MasterConfig,
+	STORAGE_BACKEND_NAMES,
 	STORE_PRODUCT_SLOT_NAMES,
 	TAG_STYLE_NAMES,
 } from '@fluxer/config/src/MasterConfig';
@@ -23,14 +26,43 @@ let cachedConfig: MasterConfig | null = null;
 
 const MAX_REPORT_RETENTION_DAYS = 36_500;
 
+const DAY_MS = 86_400_000;
+const UPLOADS_TTL_PATTERN = /^(\d+)([mhdwMy])$/;
+const UPLOADS_TTL_UNIT_MS: Record<string, number> = {
+	m: 60_000,
+	h: 3_600_000,
+	d: DAY_MS,
+	w: 7 * DAY_MS,
+	M: 30 * DAY_MS,
+	y: 365 * DAY_MS,
+};
+
+export function parseUploadsTtlMs(value: string): number | null {
+	if (value === 'off') {
+		return null;
+	}
+	const match = UPLOADS_TTL_PATTERN.exec(value);
+	const ms = match ? Number(match[1]) * (UPLOADS_TTL_UNIT_MS[match[2]] ?? Number.NaN) : Number.NaN;
+	if (!Number.isSafeInteger(ms)) {
+		throw new Error(
+			`FLUXER_STORAGE_UPLOADS_TTL must be a number followed by m, h, d, w, M or y, such as 1d, or off, got ${JSON.stringify(value)}`,
+		);
+	}
+	return ms === 0 ? null : ms;
+}
+
+const OFFICIAL_ANDROID_PASSKEY_ORIGINS = [
+	'android:apk-key-hash:keSY4bimyLqZQV7bKXgpa2xYuqXi0qZJzsYtp6gpx7w',
+	'android:apk-key-hash:Ld4qnT0TfBeHMT3Yu2H0WTwqlxgFs-32uDmwqtLndsk',
+];
+
 const DEFAULT_PASSKEY_ORIGINS = [
 	'https://fluxer.app',
 	'https://web.fluxer.app',
 	'https://web.canary.fluxer.app',
 	'https://fluxer.com',
 	'https://canary.fluxer.com',
-	'android:apk-key-hash:keSY4bimyLqZQV7bKXgpa2xYuqXi0qZJzsYtp6gpx7w',
-	'android:apk-key-hash:Ld4qnT0TfBeHMT3Yu2H0WTwqlxgFs-32uDmwqtLndsk',
+	...OFFICIAL_ANDROID_PASSKEY_ORIGINS,
 ];
 
 function defaultConfig(): MasterConfig {
@@ -61,6 +93,12 @@ function defaultConfig(): MasterConfig {
 			kv: 'redis://localhost:6379/0',
 			kv_mode: 'standalone',
 			media_proxy: 'http://127.0.0.1:8082',
+		},
+		storage: {
+			backend: 's3',
+			root: '',
+			uploads_ttl: '1d',
+			read_only: false,
 		},
 		database: {
 			backend: 'postgres',
@@ -105,6 +143,7 @@ function defaultConfig(): MasterConfig {
 				headers_timeout_ms: 30_000,
 				request_timeout_ms: 120_000,
 				max_inflight_requests: 512,
+				max_concurrent_form_uploads: 16,
 				automated_message_deletion_delay_days: 7,
 				ip_ban_exempt_ips: [],
 				donation_proxy_key: '',
@@ -114,6 +153,7 @@ function defaultConfig(): MasterConfig {
 				unfurl_ignored_hosts: [],
 				app_origin_aliases: [],
 				discovery_public_endpoint: '',
+				discovery_transport_endpoint: '',
 				storage_change_feed: {
 					enabled: false,
 					stream: 'STORAGE_CHANGES',
@@ -143,6 +183,10 @@ function defaultConfig(): MasterConfig {
 			admin: {
 				secret_key_base: '',
 				oauth_client_secret: '',
+				sso: {
+					issuer: '',
+					client_id: '',
+				},
 			},
 		},
 		auth: {
@@ -243,6 +287,7 @@ function defaultConfig(): MasterConfig {
 			store_billing: {
 				sandbox_user_ids: [],
 				sandbox_entitles_all: false,
+				sandbox_subscriptions: true,
 			},
 		},
 		instance: {
@@ -255,6 +300,7 @@ function defaultConfig(): MasterConfig {
 			},
 			account_identity: null,
 			tag_style: null,
+			age_policy: {},
 		},
 		payment_disputes: {},
 		operator_pass: {
@@ -329,9 +375,9 @@ function applyProfilePseudonymSecret(config: MasterConfig): void {
 	config.auth.profile_pseudonym_secret = DEVELOPMENT_PROFILE_PSEUDONYM_SECRET;
 }
 
-function validateReplyToEmail(value: string): void {
+function validateSingleEmail(value: string, name: string): void {
 	if (value !== '' && !/^[^\s@<>,;"]+@[^\s@<>,;"]+$/.test(value)) {
-		throw new Error('FLUXER_EMAIL_REPLY_TO_EMAIL must be a single email address such as support@example.com');
+		throw new Error(`${name} must be a single email address such as support@example.com`);
 	}
 }
 
@@ -533,6 +579,38 @@ function validateReportRetentionConfig(config: MasterConfig): void {
 	assertBoolean(retention.dry_run, 'FLUXER_REPORT_RETENTION_DRY_RUN');
 }
 
+function validateStorageConfig(config: MasterConfig): void {
+	const storage = config.storage;
+	assertOneOf(storage.backend, STORAGE_BACKEND_NAMES, 'FLUXER_STORAGE_BACKEND');
+	assertBoolean(storage.read_only, 'FLUXER_STORAGE_READ_ONLY');
+	if (storage.backend === 's3') {
+		requireString(config.s3?.access_key_id, 'FLUXER_S3_ACCESS_KEY_ID');
+		requireString(config.s3?.secret_access_key, 'FLUXER_S3_SECRET_ACCESS_KEY');
+		return;
+	}
+	requireString(storage.root, 'FLUXER_STORAGE_ROOT');
+	if (!path.isAbsolute(storage.root)) {
+		throw new Error('FLUXER_STORAGE_ROOT must be an absolute path');
+	}
+	parseUploadsTtlMs(storage.uploads_ttl);
+}
+
+function validateKVConfig(config: MasterConfig): void {
+	assertOneOf(config.internal.kv_mode, KV_MODE_NAMES, 'FLUXER_KV_MODE');
+	const pool = config.internal.kv_postgres;
+	if (pool?.max_connections !== undefined) {
+		assertIntegerInRange(pool.max_connections, 'FLUXER_KV_POSTGRES_MAX_CONNECTIONS', 1, 1000);
+	}
+	if (pool?.max_bytes !== undefined) {
+		assertIntegerInRange(pool.max_bytes, 'FLUXER_KV_POSTGRES_MAX_BYTES', 1, Number.MAX_SAFE_INTEGER);
+	}
+	if (config.internal.kv_mode === 'postgres' && config.database.backend !== 'postgres') {
+		throw new Error(
+			'FLUXER_KV_MODE=postgres keeps key-value data in the main Postgres database, so FLUXER_DATABASE_BACKEND must be postgres',
+		);
+	}
+}
+
 function validateStorageChangeFeedConfig(config: MasterConfig): void {
 	const feed = config.services.api?.storage_change_feed;
 	if (!feed?.enabled) {
@@ -635,6 +713,33 @@ function validateStoreBillingConfig(config: MasterConfig): void {
 		}
 	}
 	assertBoolean(config.integrations.store_billing.sandbox_entitles_all, 'FLUXER_STORE_BILLING_SANDBOX_ENTITLES_ALL');
+	assertBoolean(config.integrations.store_billing.sandbox_subscriptions, 'FLUXER_STORE_BILLING_SANDBOX_SUBSCRIPTIONS');
+}
+
+const AGE_POLICY_REGION_PATTERN = /^[A-Z]{2}(?:-[A-Z0-9]{1,3})?$/u;
+
+function normalizeAgePolicyRegions(regions: Array<string> | undefined, envName: string): Array<string> | undefined {
+	if (regions === undefined) return undefined;
+	const normalized = regions.map((region) => region.trim().toUpperCase());
+	for (const region of normalized) {
+		if (!AGE_POLICY_REGION_PATTERN.test(region)) {
+			throw new Error(
+				`${envName} entry ${JSON.stringify(region)} must be a country code such as GB or a country and region code such as US-MS`,
+			);
+		}
+	}
+	return [...new Set(normalized)];
+}
+
+function normalizeAgePolicyConfig(config: MasterConfig): void {
+	const agePolicy = config.instance.age_policy;
+	if (agePolicy.enabled !== undefined) {
+		assertBoolean(agePolicy.enabled, 'FLUXER_AGE_POLICY_ENABLED');
+	}
+	config.instance.age_policy = {
+		enabled: agePolicy.enabled,
+		restricted_regions: normalizeAgePolicyRegions(agePolicy.restricted_regions, 'FLUXER_AGE_POLICY_RESTRICTED_REGIONS'),
+	};
 }
 
 function validateDomain(value: string, envName: string): void {
@@ -689,7 +794,6 @@ function normalizeConfig(config: MasterConfig): MasterConfig {
 	assertOneOf(config.env, ['development', 'production', 'test'], 'FLUXER_ENV');
 	assertOneOf(config.domain.public_scheme, ['http', 'https'], 'FLUXER_PUBLIC_SCHEME');
 	assertOneOf(config.database.backend, ['postgres', 'cassandra'], 'FLUXER_DATABASE_BACKEND');
-	assertOneOf(config.internal.kv_mode, ['standalone', 'cluster'], 'FLUXER_KV_MODE');
 	assertOneOf(config.integrations.email.provider, ['smtp', 'none'], 'FLUXER_EMAIL_PROVIDER');
 	if (config.integrations.email.delivery !== undefined) {
 		assertOneOf(config.integrations.email.delivery, ['off', 'smtp'], 'FLUXER_EMAIL_DELIVERY');
@@ -703,15 +807,25 @@ function normalizeConfig(config: MasterConfig): MasterConfig {
 		assertOneOf(config.instance.account_identity, ACCOUNT_IDENTITY_MODE_NAMES, 'FLUXER_ACCOUNT_IDENTITY');
 	}
 	validatePostgresConfig(config);
+	validateKVConfig(config);
+	validateStorageConfig(config);
 	validateApiWorkerConfig(config);
 	validateStorageChangeFeedConfig(config);
 	validateReportRetentionConfig(config);
 	validateCachePurgeConfig(config);
 	validateStoreBillingConfig(config);
-	validateReplyToEmail(config.integrations.email.reply_to_email);
+	validateSingleEmail(config.integrations.email.reply_to_email, 'FLUXER_EMAIL_REPLY_TO_EMAIL');
+	validateSingleEmail(config.integrations.email.support_alert_email ?? '', 'FLUXER_EMAIL_SUPPORT_ALERT_EMAIL');
 	normalizeEmailFallbackConfig(config);
 	normalizeAppOriginAliases(config);
+	normalizeAgePolicyConfig(config);
 	assertIntegerInRange(config.services.api.max_inflight_requests, 'FLUXER_API_MAX_INFLIGHT_REQUESTS', 1, 100_000);
+	assertIntegerInRange(
+		config.services.api.max_concurrent_form_uploads,
+		'FLUXER_API_MAX_CONCURRENT_FORM_UPLOADS',
+		1,
+		10_000,
+	);
 	assertIntegerInRange(
 		config.services.api.automated_message_deletion_delay_days,
 		'FLUXER_API_AUTOMATED_MESSAGE_DELETION_DELAY_DAYS',
@@ -729,8 +843,6 @@ function normalizeConfig(config: MasterConfig): MasterConfig {
 	requireString(config.auth.connection_initiation_secret, 'FLUXER_CONNECTION_INITIATION_SECRET');
 	applyProfilePseudonymSecret(config);
 	validateVapidConfig(config);
-	requireString(config.s3?.access_key_id, 'FLUXER_S3_ACCESS_KEY_ID');
-	requireString(config.s3?.secret_access_key, 'FLUXER_S3_SECRET_ACCESS_KEY');
 	requireString(config.services.media_proxy.secret_key, 'FLUXER_MEDIA_PROXY_SECRET_KEY');
 	validateUploadRelaySecret(config.services.media_proxy.upload_relay.secret_base64);
 	validateAttachmentUrlSecrets(config.services.media_proxy.attachment_urls.secrets_base64);
@@ -864,6 +976,9 @@ function normalizePasskeys(config: MasterConfig, useDefaultOrigins: boolean): vo
 			...new Set([...passkeys.additional_allowed_origins, new URL(config.endpoints.app).origin]),
 		];
 	}
+	passkeys.additional_allowed_origins = [
+		...new Set([...passkeys.additional_allowed_origins, ...OFFICIAL_ANDROID_PASSKEY_ORIGINS]),
+	];
 }
 
 export async function loadConfig(): Promise<MasterConfig> {

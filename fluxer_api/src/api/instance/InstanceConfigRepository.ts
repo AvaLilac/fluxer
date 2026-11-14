@@ -4,6 +4,12 @@ import crypto from 'node:crypto';
 import {createUserID, type UserID} from '@app/api/BrandedTypes';
 import {Config} from '@app/api/Config';
 import type {APIConfig, BlueskyOAuthConfig, BlueskyOAuthKeyConfig} from '@app/api/config/APIConfig';
+import {
+	buildConnectionProviderIndex,
+	type ConnectionProviderIndex,
+	parseStoredConnectionProviders,
+	type StoredConnectionProvider,
+} from '@app/api/connection/ConnectionProviders';
 import type {StoredLimitConfig} from '@app/api/constants/LimitConfig';
 import {executeConditional, fetchMany, fetchOne, upsertOne} from '@app/api/database/CassandraQueryExecution';
 import {Db, type PreparedQuery} from '@app/api/database/CassandraTypes';
@@ -22,6 +28,7 @@ import {
 	setCachedAccountsConfig,
 	setCachedEmailDeliveryState,
 } from '@app/api/instance/AccountsConfigCache';
+import {setCachedProxyAttachmentsThroughApi} from '@app/api/instance/AttachmentAccessMode';
 import {getLegacyDateOfBirthCollectionDefault} from '@app/api/instance/DateOfBirthCollectionCache';
 import {
 	describeIncompleteSmtpConfig,
@@ -61,6 +68,7 @@ import {
 	isStripeServiceable,
 	setStoredBillingConfig,
 } from '@app/api/stripe/BillingConfigCache';
+import {defaultDistributionPricingConfig, setDistributionPricingConfig} from '@app/api/stripe/DistributionPricing';
 import {AdminAuditLogs, InstanceConfiguration, Users} from '@app/api/Tables';
 import {DEFAULT_DECAY_CONSTANTS, DEFAULT_RENEWAL_CONSTANTS} from '@app/api/utils/AttachmentDecay';
 import {isJsonRecord} from '@app/api/utils/JsonBoundaryUtils';
@@ -109,7 +117,7 @@ import {
 import {resolveSmtpTlsMode, type SmtpTlsMode} from '@fluxer/constants/src/SmtpConstants';
 import {ConflictError} from '@fluxer/errors/src/domains/core/ConflictError';
 import {ServiceUnavailableError} from '@fluxer/errors/src/domains/core/ServiceUnavailableError';
-import {normalizeThemeColor} from '@fluxer/instance_bootstrap/src/ThemeColor';
+import {normalizeHexColor, normalizeThemeColor} from '@fluxer/instance_bootstrap/src/ThemeColor';
 import {
 	type AccountsConfig,
 	AccountsConfigSchema,
@@ -154,6 +162,10 @@ import {
 	StoredBillingConfigSchema,
 } from '@fluxer/schema/src/domains/admin/InstanceBillingSchemas';
 import {
+	type DistributionPricingConfig,
+	DistributionPricingConfigSchema,
+} from '@fluxer/schema/src/domains/admin/InstanceDistributionPricingSchemas';
+import {
 	type LegacyPushServiceDeliveryWire,
 	type PushRelayConfig,
 	PushRelayConfigSchema,
@@ -184,6 +196,7 @@ const GATEWAY_ROLLOUT_CONFIG_KEY = 'gateway_rollout_config';
 const PUSH_RELAY_CONFIG_KEY = 'push_service_delivery_config';
 const DOMAIN_MIGRATION_CONFIG_KEY = 'domain_migration_config';
 const VOICE_P2P_CONFIG_KEY = 'voice_p2p_config';
+const DISTRIBUTION_PRICING_CONFIG_KEY = 'distribution_pricing_config';
 const CAPTCHA_CONFIG_KEY = 'captcha_config';
 const AUTH_CONFIG_KEY = 'auth_config';
 const ACCOUNTS_CONFIG_KEY = 'accounts_config';
@@ -192,6 +205,7 @@ const CHANNEL_THREADS_CONFIG_KEY = 'channel_threads_config';
 const EXPERIMENT_DELIVERY_CONFIG_KEY = 'experiment_delivery_config';
 const REGISTRATION_CONFIG_KEY = 'registration_config';
 const REGISTRATION_URLS_KEY = 'registration_urls';
+const CONNECTION_PROVIDERS_KEY = 'connection_providers';
 const REGISTRATION_PENDING_APPROVALS_KEY = 'registration_pending_approvals';
 const APP_PUBLIC_CONFIG_KEY = 'app_public_config';
 const ADMIN_BOOTSTRAP_KEY = 'admin_bootstrapped';
@@ -210,6 +224,8 @@ export const INSTANCE_CONFIG_REFRESH_CHANNEL = 'instance-config-refresh';
 export const REGISTRATION_PENDING_APPROVAL_TRAIT = 'registration_pending_approval';
 export const REGISTRATION_REJECTED_TRAIT = 'registration_rejected';
 export const INSTANCE_CONFIG_WRITE_ATTEMPTS = 5;
+
+type InstanceServiceToggles = Omit<InstanceServices, 'connection_providers'>;
 
 export class InstanceConfigWriteConflictError extends ConflictError {
 	constructor(key: string) {
@@ -411,6 +427,7 @@ interface InstanceAttachmentDecayConfig {
 
 interface InstanceMediaConfig {
 	attachment_decay: InstanceAttachmentDecayConfig;
+	proxy_attachments_through_api?: boolean | undefined;
 }
 
 export interface InstanceAttachmentDecayEffectiveConfig {
@@ -429,6 +446,7 @@ interface InstanceMediaAdminConfig {
 	attachment_decay: InstanceAttachmentDecayConfig & {
 		effective: InstanceAttachmentDecayEffectiveConfig;
 	};
+	proxy_attachments_through_api: boolean;
 }
 
 export interface InstanceIntegrationsConfigPatch {
@@ -446,6 +464,7 @@ export interface InstanceIntegrationsConfigPatch {
 
 interface InstanceMediaConfigPatch {
 	attachment_decay?: Partial<InstanceAttachmentDecayConfig>;
+	proxy_attachments_through_api?: boolean;
 }
 
 export interface InstanceRegistrationUrl extends RegistrationUrlResponse {
@@ -511,6 +530,16 @@ function normalizeOptionalPublicString(value: string | null | undefined, fallbac
 	return value === undefined ? fallback : normalizeOptionalString(value);
 }
 
+function normalizePremiumShowcaseAsset(value: string | null | undefined): string | null {
+	if (!Config.instance.selfHosted || typeof value !== 'string') return null;
+	const reference = toStoredBrandingAsset(value.trim(), Config.endpoints.media);
+	return typeof reference === 'string' &&
+		reference.startsWith('branding-backdrops/') &&
+		isBrandingAssetReference(reference)
+		? reference
+		: null;
+}
+
 function getDefaultPremiumProductName(): string {
 	return Config.instance.selfHosted ? 'Premium' : 'Plutonium';
 }
@@ -533,6 +562,11 @@ function getDefaultAppPublicConfig(): InstanceAppPublicConfig {
 			premium_product_name: getDefaultPremiumProductName(),
 			premium_info_url: null,
 			sign_in_backdrop_url: normalizeOptionalString(Config.instance.branding.signInBackdropUrl),
+			premium_page_color: null,
+			premium_showcase_expressions_url: null,
+			premium_showcase_profile_url: null,
+			premium_showcase_stream_url: null,
+			premium_showcase_upload_url: null,
 			custom_css: null,
 			upload_limit_message: null,
 			trusted_domains: [],
@@ -557,6 +591,7 @@ type StoredConfigSection =
 	| 'push relay'
 	| 'domain migration'
 	| 'voice p2p'
+	| 'distribution pricing'
 	| 'captcha'
 	| 'auth'
 	| 'accounts'
@@ -787,6 +822,15 @@ function parseStoredDomainMigrationConfig(raw: string | null): DomainMigrationCo
 
 function parseStoredVoiceP2pConfig(raw: string | null): VoiceP2pConfig {
 	return parseStoredConfigOrDefault(VoiceP2pConfigSchema, raw, 'voice p2p');
+}
+
+function parseStoredDistributionPricingConfig(raw: string | null): DistributionPricingConfig {
+	if (raw === null) return defaultDistributionPricingConfig();
+	return salvageStoredConfig(
+		DistributionPricingConfigSchema,
+		readStoredConfigValue(raw, 'distribution pricing'),
+		'distribution pricing',
+	);
 }
 
 function migrateStoredCaptchaConfig(value: unknown): unknown {
@@ -1056,6 +1100,11 @@ function buildAppPublicConfig(config: z.infer<typeof StoredInstanceAppPublicSche
 				branding.sign_in_backdrop_url,
 				defaults.branding.sign_in_backdrop_url,
 			),
+			premium_page_color: Config.instance.selfHosted ? normalizeHexColor(branding.premium_page_color) : null,
+			premium_showcase_expressions_url: normalizePremiumShowcaseAsset(branding.premium_showcase_expressions_url),
+			premium_showcase_profile_url: normalizePremiumShowcaseAsset(branding.premium_showcase_profile_url),
+			premium_showcase_stream_url: normalizePremiumShowcaseAsset(branding.premium_showcase_stream_url),
+			premium_showcase_upload_url: normalizePremiumShowcaseAsset(branding.premium_showcase_upload_url),
 			custom_css: normalizeOptionalPublicString(branding.custom_css, defaults.branding.custom_css),
 			upload_limit_message: normalizeOptionalPublicString(
 				branding.upload_limit_message,
@@ -1282,6 +1331,7 @@ const StoredAttachmentDecaySchema = z
 	);
 const StoredInstanceMediaSchema = z.object({
 	attachment_decay: StoredAttachmentDecaySchema.prefault({}),
+	proxy_attachments_through_api: z.boolean().optional(),
 }) satisfies z.ZodType<InstanceMediaConfig>;
 
 function normalizeAttachmentDecayBounds(value: InstanceAttachmentDecayConfig): InstanceAttachmentDecayConfig {
@@ -1669,6 +1719,7 @@ export class InstanceConfigRepository {
 	private effectiveBlueskyConfigSource: string | null = null;
 	private parsedCustomBadges: {raw: string | null; stored: StoredCustomBadges} | null = null;
 	private parsedCustomBadgeCatalog: {raw: string | null; stored: CustomBadgeCatalogState} | null = null;
+	private connectionProviderIndex: {raw: string | null; index: ConnectionProviderIndex} | null = null;
 
 	constructor(kvClient: IKVProvider | null = null) {
 		this.kvClient = kvClient;
@@ -1821,6 +1872,9 @@ export class InstanceConfigRepository {
 		parseStoredPushRelayConfig(snapshot.get(PUSH_RELAY_CONFIG_KEY) ?? null);
 		parseStoredDomainMigrationConfig(snapshot.get(DOMAIN_MIGRATION_CONFIG_KEY) ?? null);
 		parseStoredVoiceP2pConfig(snapshot.get(VOICE_P2P_CONFIG_KEY) ?? null);
+		setDistributionPricingConfig(
+			parseStoredDistributionPricingConfig(snapshot.get(DISTRIBUTION_PRICING_CONFIG_KEY) ?? null),
+		);
 		parseStoredCaptchaConfig(snapshot.get(CAPTCHA_CONFIG_KEY) ?? null);
 		parseStoredAuthConfig(snapshot.get(AUTH_CONFIG_KEY) ?? null);
 		setCachedAccountsConfig(
@@ -1857,7 +1911,13 @@ export class InstanceConfigRepository {
 		checkStoredConfig('integrations', () =>
 			parseStoredInstanceIntegrationsConfig(snapshot.get(INSTANCE_INTEGRATIONS_CONFIG_KEY) ?? null),
 		);
-		checkStoredConfig('media', () => parseStoredInstanceMediaConfig(snapshot.get(INSTANCE_MEDIA_CONFIG_KEY) ?? null));
+		setCachedProxyAttachmentsThroughApi(null);
+		checkStoredConfig('media', () =>
+			setCachedProxyAttachmentsThroughApi(
+				parseStoredInstanceMediaConfig(snapshot.get(INSTANCE_MEDIA_CONFIG_KEY) ?? null).proxy_attachments_through_api ??
+					null,
+			),
+		);
 		setStoredBillingConfig(parseStoredInstanceBillingConfig(snapshot.get(INSTANCE_BILLING_CONFIG_KEY) ?? null));
 		const appPublic = parseStoredAppPublicConfig(snapshot.get(APP_PUBLIC_CONFIG_KEY) ?? null);
 		setCachedConfiguredLegalUrls(appPublic.legal);
@@ -1891,6 +1951,7 @@ export class InstanceConfigRepository {
 
 	clearCacheForTesting(): void {
 		setCachedProductName(null);
+		setCachedProxyAttachmentsThroughApi(null);
 		setCachedAccountIdentity(null);
 		setCachedAccountsConfig(null);
 		setCachedEmailDeliveryState(null);
@@ -2200,6 +2261,26 @@ export class InstanceConfigRepository {
 		return this.updateStoredConfig(VOICE_P2P_CONFIG_KEY, (raw) =>
 			validateStoredConfig(VoiceP2pConfigSchema, update(parseStoredVoiceP2pConfig(raw)), 'voice p2p'),
 		);
+	}
+
+	async getDistributionPricingConfig(): Promise<DistributionPricingConfig> {
+		const config = parseStoredDistributionPricingConfig(await this.getConfig(DISTRIBUTION_PRICING_CONFIG_KEY));
+		setDistributionPricingConfig(config);
+		return config;
+	}
+
+	async updateDistributionPricingConfig(
+		update: (current: DistributionPricingConfig) => DistributionPricingConfig,
+	): Promise<DistributionPricingConfig> {
+		const next = await this.updateStoredConfig(DISTRIBUTION_PRICING_CONFIG_KEY, (raw) =>
+			validateStoredConfig(
+				DistributionPricingConfigSchema,
+				update(parseStoredDistributionPricingConfig(raw)),
+				'distribution pricing',
+			),
+		);
+		setDistributionPricingConfig(next);
+		return next;
 	}
 
 	private async getStoredCustomBadges(): Promise<StoredCustomBadges> {
@@ -2773,16 +2854,22 @@ export class InstanceConfigRepository {
 		return parseStoredInstanceMediaConfig(raw);
 	}
 
-	setInstanceMediaConfig(config: InstanceMediaConfigPatch): Promise<InstanceMediaConfig> {
-		return this.updateStoredConfig(INSTANCE_MEDIA_CONFIG_KEY, (raw) => {
+	async setInstanceMediaConfig(config: InstanceMediaConfigPatch): Promise<InstanceMediaConfig> {
+		const next = await this.updateStoredConfig(INSTANCE_MEDIA_CONFIG_KEY, (raw) => {
 			const current = parseStoredInstanceMediaConfig(raw);
+			const proxyAttachmentsThroughApi = config.proxy_attachments_through_api ?? current.proxy_attachments_through_api;
 			return decodeInstanceMediaConfig({
 				attachment_decay: {
 					...current.attachment_decay,
 					...(config.attachment_decay ?? {}),
 				},
+				...(proxyAttachmentsThroughApi === undefined
+					? {}
+					: {proxy_attachments_through_api: proxyAttachmentsThroughApi}),
 			});
 		});
+		setCachedProxyAttachmentsThroughApi(next.proxy_attachments_through_api ?? null);
+		return next;
 	}
 
 	async getEffectiveAttachmentDecayConfig(): Promise<InstanceAttachmentDecayEffectiveConfig> {
@@ -2804,6 +2891,7 @@ export class InstanceConfigRepository {
 				...media.attachment_decay,
 				effective: attachmentDecay,
 			},
+			proxy_attachments_through_api: media.proxy_attachments_through_api === true,
 		};
 	}
 
@@ -2904,16 +2992,19 @@ export class InstanceConfigRepository {
 	async getInstantAccountAvailability(
 		registrationUrl: {approvalRequired: boolean} | null = null,
 	): Promise<InstantAccountAvailability> {
-		const [auth, captcha, registration] = await Promise.all([
+		const [auth, captcha, registration, identityMode] = await Promise.all([
 			this.getAuthConfig(),
 			this.getCaptchaConfig(),
 			this.getRegistrationConfig(),
+			this.getAccountIdentityMode(),
 		]);
 		return resolveInstantAccountAvailability({
 			enabled: auth.instant_accounts.enabled,
 			captchaProvider: captcha.provider,
 			registrationMode: registration.mode,
 			registrationUrl,
+			emailDomainsRestricted:
+				identityMode !== AccountIdentityModes.USERNAME && registration.allowed_email_domains.length > 0,
 		});
 	}
 
@@ -3106,7 +3197,29 @@ export class InstanceConfigRepository {
 		});
 	}
 
-	async getResolvedServicesConfig(): Promise<InstanceServices> {
+	async getConnectionProviderIndex(): Promise<ConnectionProviderIndex> {
+		if (!Config.instance.selfHosted) return new Map();
+		const raw = await this.getConfig(CONNECTION_PROVIDERS_KEY);
+		if (this.connectionProviderIndex?.raw !== raw || this.connectionProviderIndex === null) {
+			this.connectionProviderIndex = {
+				raw,
+				index: buildConnectionProviderIndex(parseStoredConnectionProviders(raw)),
+			};
+		}
+		return this.connectionProviderIndex.index;
+	}
+
+	async getConnectionProviders(): Promise<Array<StoredConnectionProvider>> {
+		return [...(await this.getConnectionProviderIndex()).values()].map(({provider}) => provider);
+	}
+
+	async setConnectionProviders(
+		next: (current: Array<StoredConnectionProvider>) => Array<StoredConnectionProvider>,
+	): Promise<void> {
+		await this.updateStoredConfig(CONNECTION_PROVIDERS_KEY, (raw) => next(parseStoredConnectionProviders(raw)));
+	}
+
+	async getResolvedServicesConfig(): Promise<InstanceServiceToggles> {
 		const [policy, gif, youtubeApiKey, bluesky] = await Promise.all([
 			this.getInstancePolicyConfig(),
 			this.getEffectiveGifConfig(),

@@ -105,6 +105,10 @@ export const RpcRequest = z.discriminatedUnion('type', [
 	z.object({
 		type: z.literal('get_push_subscriptions').describe('Request type for fetching push notification subscriptions'),
 		user_ids: z.array(SnowflakeType).describe('IDs of users to fetch subscriptions for'),
+		age_restricted: z
+			.boolean()
+			.optional()
+			.describe('Leave out iOS app subscriptions of users who have not allowed 18+ content on iOS'),
 	}),
 	z.object({
 		type: z.literal('get_badge_counts').describe('Request type for fetching notification badge counts'),
@@ -124,6 +128,12 @@ export const RpcRequest = z.discriminatedUnion('type', [
 	z.object({
 		type: z.literal('get_user_blocked_ids').describe('Request type for fetching blocked user IDs'),
 		user_ids: z.array(SnowflakeType).max(RPC_USER_BATCH_MAX).describe('IDs of users to fetch blocked lists for'),
+	}),
+	z.object({
+		type: z
+			.literal('get_users_adult_content_allowed')
+			.describe('Request type for checking which users may see 18+ content'),
+		user_ids: z.array(SnowflakeType).max(RPC_USER_BATCH_MAX).describe('IDs of users to check'),
 	}),
 	z.object({
 		type: z.literal('voice_get_token').describe('Request type for getting voice connection token'),
@@ -185,7 +195,7 @@ export const RpcRequest = z.discriminatedUnion('type', [
 	z.object({
 		type: z
 			.literal('voice_update_participant_permissions')
-			.describe('Request type for updating voice participant permissions'),
+			.describe('Request type for updating the voice permissions of one connection'),
 		guild_id: SnowflakeType.optional().describe('ID of the guild'),
 		channel_id: SnowflakeType.describe('ID of the voice channel'),
 		user_id: SnowflakeType.describe('ID of the user to update'),
@@ -193,7 +203,7 @@ export const RpcRequest = z.discriminatedUnion('type', [
 		can_speak: z.boolean().describe('Whether the user can speak'),
 		can_stream: z.boolean().describe('Whether the user can stream'),
 		can_video: z.boolean().describe('Whether the user can use video'),
-		deaf: z.boolean().optional().describe('Whether the user is deafened'),
+		deaf: z.boolean().describe('Whether the user is deafened'),
 	}),
 	z.object({
 		type: z.literal('call_ended').describe('Request type for notifying that a call has ended'),
@@ -454,6 +464,12 @@ export const RpcResponse = z.discriminatedUnion('type', [
 	z.object({
 		type: z.literal('get_user_blocked_ids').describe('Response type for blocked user IDs'),
 		data: z.record(SnowflakeStringType, z.array(SnowflakeStringType)).describe('Blocked user IDs keyed by user ID'),
+	}),
+	z.object({
+		type: z.literal('get_users_adult_content_allowed').describe('Response type for the 18+ content check'),
+		data: z
+			.object({user_ids: z.array(SnowflakeStringType).describe('IDs of the requested users who may see 18+ content')})
+			.describe('Users who may see 18+ content'),
 	}),
 	z.object({
 		type: z.literal('voice_get_token').describe('Response type for voice connection token'),

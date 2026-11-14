@@ -3,15 +3,15 @@
 import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
 import {offerAuthenticatorCalmly} from '@app/features/auth/components/modals/AuthenticatorOfferModal';
 import Accounts from '@app/features/auth/state/Accounts';
-import * as OperatorPassCommands from '@app/features/premium/commands/OperatorPassCommands';
+import {deliverPurchasedChatGift, hasPendingChatGiftSend} from '@app/features/gift/state/ChatGiftSend';
 import * as OperatorPassModalCommands from '@app/features/premium/commands/OperatorPassModalCommands';
 import * as PlutoniumPageCommands from '@app/features/premium/commands/PlutoniumPageCommands';
 import * as PremiumCommands from '@app/features/premium/commands/PremiumCommands';
+import OperatorPassCheckoutSession from '@app/features/premium/state/OperatorPassCheckoutSession';
+import OperatorPassHoldings from '@app/features/premium/state/OperatorPassHoldings';
 import {isOperatorPassAvailable} from '@app/features/premium/utils/OperatorPassUtils';
 import {
 	consumeCompletedPremiumCheckoutReturnIntent,
-	consumeOperatorPassCheckoutReturnIntent,
-	getCurrentOperatorPassCount,
 	getCurrentPremiumActive,
 	getPendingPremiumCheckoutReturnIntent,
 } from '@app/features/premium/utils/PremiumCheckoutReturnIntent';
@@ -22,11 +22,8 @@ import {observer} from 'mobx-react-lite';
 import {useCallback, useEffect, useRef} from 'react';
 
 const REFRESH_COOLDOWN_MS = 2000;
-
-function reopenOperatorPassCheckout(): void {
-	if (!isOperatorPassAvailable()) return;
-	OperatorPassModalCommands.reopenCheckoutModalAfterReturn();
-}
+const CHAT_GIFT_POLL_INTERVAL_MS = 3000;
+const CHAT_GIFT_POLL_ATTEMPTS = 40;
 
 interface ActivePremiumCheckoutReturnWatcherProps {
 	readonly currentUserId: string;
@@ -38,7 +35,9 @@ const ActivePremiumCheckoutReturnWatcher = observer(function ActivePremiumChecko
 	showPremiumFeatures,
 }: ActivePremiumCheckoutReturnWatcherProps) {
 	const isPremium = getCurrentPremiumActive();
-	const operatorPassCount = getCurrentOperatorPassCount();
+	const operatorPassRun = OperatorPassCheckoutSession.run;
+	const operatorPassArrived =
+		operatorPassRun !== null && (OperatorPassHoldings.count ?? 0) > operatorPassRun.startedPassCount;
 	const isFocused = WindowState.focused;
 	const isVisible = WindowState.visible;
 	const refreshInFlightRef = useRef(false);
@@ -51,15 +50,7 @@ const ActivePremiumCheckoutReturnWatcher = observer(function ActivePremiumChecko
 		if (refreshInFlightRef.current || now - lastRefreshAtRef.current < REFRESH_COOLDOWN_MS) return;
 		lastRefreshAtRef.current = now;
 		refreshInFlightRef.current = true;
-		const refresh =
-			intent.source === 'operator_pass'
-				? OperatorPassCommands.fetchState().then((state) => {
-						if (consumeOperatorPassCheckoutReturnIntent(state)) {
-							reopenOperatorPassCheckout();
-						}
-					})
-				: PremiumCommands.refreshPremiumState();
-		void refresh
+		void PremiumCommands.refreshPremiumState()
 			.catch(() => undefined)
 			.finally(() => {
 				refreshInFlightRef.current = false;
@@ -72,16 +63,27 @@ const ActivePremiumCheckoutReturnWatcher = observer(function ActivePremiumChecko
 	}, [isFocused, isVisible, maybeRefreshPremiumState, showPremiumFeatures]);
 	useEffect(() => {
 		if (!showPremiumFeatures) return;
-		if (!isPremium && operatorPassCount === 0) return;
+		if (!isPremium) return;
 		const intent = consumeCompletedPremiumCheckoutReturnIntent();
 		if (!intent) return;
-		if (intent.source === 'operator_pass') {
-			reopenOperatorPassCheckout();
-			return;
-		}
 		PlutoniumPageCommands.openPlutoniumPage();
 		void offerAuthenticatorCalmly();
-	}, [isPremium, operatorPassCount, currentUserId, showPremiumFeatures]);
+	}, [isPremium, currentUserId, showPremiumFeatures]);
+	useEffect(() => {
+		if (!isFocused || !isVisible || !hasPendingChatGiftSend()) return;
+		let attempts = 0;
+		const timer = setInterval(() => {
+			attempts += 1;
+			void deliverPurchasedChatGift().then((done) => {
+				if (done || attempts >= CHAT_GIFT_POLL_ATTEMPTS || !hasPendingChatGiftSend()) clearInterval(timer);
+			});
+		}, CHAT_GIFT_POLL_INTERVAL_MS);
+		return () => clearInterval(timer);
+	}, [isFocused, isVisible]);
+	useEffect(() => {
+		if (!operatorPassArrived || !isOperatorPassAvailable()) return;
+		OperatorPassModalCommands.reopenCheckoutModalAfterReturn();
+	}, [operatorPassArrived]);
 	return null;
 });
 

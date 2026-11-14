@@ -5,6 +5,7 @@ package settings
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"slices"
 	"strings"
@@ -32,6 +33,7 @@ type Key struct {
 	Confirm  string
 	Validate func(string) error
 	Options  []string
+	File     string
 	Help     string
 }
 
@@ -39,6 +41,7 @@ const (
 	Domain          = "domain"
 	EdgeMode        = "edge.mode"
 	EdgeBind        = "edge.bind"
+	EdgeListen      = "edge.listen_address"
 	EdgeHTTPPort    = "edge.http_port"
 	EdgeHTTPSPort   = "edge.https_port"
 	EdgePublicPort  = "edge.public_port"
@@ -58,10 +61,31 @@ const (
 	NoProxy         = "network.no_proxy"
 	IPv6            = "network.ipv6"
 	SSOPrivate      = "sso.allow_private_addresses"
+	SignedMedia     = "media.signed_attachments"
 	ImagesRegistry  = "images.registry"
 	MemoryProfile   = "memory.profile"
+	DiskProfile     = "disk.profile"
 	EngineHost      = "engine.host"
 	ImagesPrefix    = "images."
+	RustProcess     = "rust.process"
+	StorageBackend  = "storage.backend"
+	KVMode          = "kv.mode"
+)
+
+const (
+	RustSingle        = "single"
+	RustPerService    = "per-service"
+	StorageS3         = "s3"
+	StorageFilesystem = "filesystem"
+	KVStandalone      = "standalone"
+	KVCluster         = "cluster"
+	KVPostgres        = "postgres"
+)
+
+const (
+	RustServerOverlayFile       = "rust-server.compose.yml"
+	FilesystemObjectOverlayFile = "filesystem-object-store.compose.yml"
+	KVPostgresOverlayFile       = "kv-postgres.compose.yml"
 )
 
 const (
@@ -89,7 +113,21 @@ var ImageVars = map[string]string{
 	"edge":        "FLUXER_CADDY_IMAGE",
 }
 
+const EdgeListenVar = "FLUXER_EDGE_LISTEN_ADDRESS"
+
+const (
+	SignatureModeVar    = "FLUXER_MEDIA_PROXY_ATTACHMENT_SIGNATURE_MODE"
+	SignatureSecretsVar = "FLUXER_MEDIA_PROXY_ATTACHMENT_URL_SECRETS_BASE64"
+)
+
+func SignsAttachments(mode string) bool {
+	m := strings.ToLower(strings.TrimSpace(mode))
+	return m == "report" || m == "enforce"
+}
+
 const storageConfirm = "Files people already uploaded stay where they are. rexctl doesn't move them."
+
+const migrateConfirm = "Data already stored stays where it is. Run rexctl migrate --experimental-native to move it over instead."
 
 var named = buildNamed()
 
@@ -102,6 +140,8 @@ func buildNamed() []Key {
 			Help: "Whether Fluxer serves HTTPS itself or runs behind your reverse proxy or a tunnel"},
 		{Name: EdgeBind, Type: "address", Vars: []string{"FLUXER_EDGE_BIND"}, Validate: validBind,
 			Help: "The address your reverse proxy or tunnel connects to"},
+		{Name: EdgeListen, Type: "ip", Vars: []string{EdgeListenVar}, Validate: validIP,
+			Help: "The IP address on this machine that Fluxer listens on for HTTP and HTTPS, or empty for every address"},
 		{Name: EdgeHTTPPort, Type: "port", Vars: []string{"FLUXER_HTTP_PORT"}, Validate: validPort,
 			Help: "The port Fluxer listens on for HTTP"},
 		{Name: EdgeHTTPSPort, Type: "port", Vars: []string{"FLUXER_HTTPS_PORT"}, Validate: validPort,
@@ -141,12 +181,26 @@ func buildNamed() []Key {
 			Help: "Whether Fluxer's network uses IPv6"},
 		{Name: SSOPrivate, Type: "bool", Vars: []string{"FLUXER_SSO_ALLOW_PRIVATE_ADDRESSES"}, Validate: validBool,
 			Help: "Whether single sign-on can use a provider on a private or local network address"},
+		{Name: SignedMedia, Type: "choice", Vars: []string{SignatureModeVar}, Options: []string{"off", "report", "enforce"}, Validate: oneOf("off", "report", "enforce"),
+			Confirm: "With enforce, attachment links without a valid signature stop working. That includes links copied out of Fluxer more than a day ago, links a bot saved and data packages made before signing was on. Fluxer's apps get new links by themselves.",
+			Help:    "Whether attachment downloads need a signed link"},
 		{Name: ImagesRegistry, Type: "registry", Validate: validRegistry,
 			Help: "A registry mirror for the database, cache, queue, search, storage, voice and edge images"},
 		{Name: MemoryProfile, Type: "choice", Options: []string{"small", "medium", "large"}, Validate: oneOf("small", "medium", "large"),
 			Help: "A fixed amount of memory for Fluxer's services, or empty to size them to this machine on every start"},
+		{Name: DiskProfile, Type: "choice", Options: []string{stack.DiskProfileSmall}, Validate: oneOf(stack.DiskProfileSmall),
+			Help: "small to keep logs, the database write-ahead log and the upload spool smaller on a small disk, or empty for the usual sizes"},
 		{Name: EngineHost, Type: "endpoint", Validate: validEndpoint,
 			Help: "The Docker or Podman engine that runs Fluxer"},
+		{Name: RustProcess, Type: "choice", Vars: []string{"FLUXER_RUST_PROCESS"}, Options: []string{RustPerService, RustSingle}, Validate: oneOf(RustPerService, RustSingle), File: RustServerOverlayFile,
+			Confirm: "The Rust services restart.",
+			Help:    "single to run the Rust services in one container, or per-service for one container each"},
+		{Name: StorageBackend, Type: "choice", Vars: []string{"FLUXER_STORAGE_BACKEND"}, Options: []string{StorageS3, StorageFilesystem}, Validate: oneOf(StorageS3, StorageFilesystem), File: FilesystemObjectOverlayFile,
+			Confirm: migrateConfirm,
+			Help:    "filesystem to keep uploaded files as plain files in a volume, or s3 for SeaweedFS or the object store set in storage.endpoint"},
+		{Name: KVMode, Type: "choice", Vars: []string{"FLUXER_KV_MODE"}, Options: []string{KVStandalone, KVCluster, KVPostgres}, Validate: oneOf(KVStandalone, KVCluster, KVPostgres), File: KVPostgresOverlayFile,
+			Confirm: migrateConfirm,
+			Help:    "postgres to keep cache, rate limit and queue data in the database, standalone for the Valkey container, or cluster for a Redis-compatible cluster at FLUXER_KV_URL"},
 	}
 	for _, svc := range slices.Sorted(maps.Keys(ImageVars)) {
 		help := "The image the " + svc + " container runs"
@@ -233,8 +287,11 @@ func Lookup(set *stack.Set, custom []string, name string, adminSchema []adminapi
 		return Key{}, unknown(name)
 	}
 	validate := validText
-	if name == TurnServersVar {
+	switch name {
+	case TurnServersVar:
 		validate = validTurnServers
+	case SignatureSecretsVar:
+		validate = validSignatureSecrets
 	}
 	return Key{Name: name, Kind: Raw, Type: "text", Vars: []string{name}, Secret: SecretName(name),
 		Stateful: generatedStateful(name), Validate: validate}, nil
@@ -253,8 +310,19 @@ func otherName(name, use string) error {
 }
 
 func releaseReads(set *stack.Set, custom []string, k Key) bool {
+	if k.File != "" {
+		if set.Files == nil {
+			return false
+		}
+		if _, err := fs.Stat(set.Files, k.File); err != nil {
+			return false
+		}
+	}
 	if k.Name == MemoryProfile {
 		return len(set.Profiles) > 0
+	}
+	if k.Name == DiskProfile {
+		return slices.Contains(set.Vars, stack.SpoolTotalVar)
 	}
 	for _, v := range k.Vars {
 		if !slices.Contains(set.Vars, v) && !slices.Contains(custom, v) {
@@ -286,4 +354,46 @@ func generatedStateful(name string) bool {
 		}
 	}
 	return false
+}
+
+func CheckCombination(chosen map[string]string) error {
+	if strings.TrimSpace(chosen[StorageBackend]) == StorageFilesystem && strings.TrimSpace(chosen[StorageEndpoint]) != "" {
+		return &Error{Key: StorageBackend,
+			Problem: "storage.backend filesystem keeps files on this machine, and storage.endpoint points at another object store.",
+			Fix:     "Run rexctl config unset storage.endpoint, or rexctl config set storage.backend s3."}
+	}
+	return nil
+}
+
+var dockerOnlyVars = []string{"FLUXER_IMAGE_TAG", "FLUXER_REGISTRY", "FLUXER_REGISTRY_OWNER", "FLUXER_POSTGRES_SHM_SIZE", "FLUXER_WORKER_REPLICAS"}
+
+var dockerOnlySuffixes = []string{"_MEMORY_LIMIT", "_MEMORY_RESERVATION", "_HEALTHCHECK_INTERVAL", "_HEALTHCHECK_RETRIES", "_HEALTHCHECK_START_PERIOD"}
+
+func DockerOnly(name string) bool {
+	switch {
+	case name == ImagesRegistry, name == IPv6, name == EngineHost, strings.HasPrefix(name, ImagesPrefix):
+		return true
+	case slices.Contains(dockerOnlyVars, name), slices.Contains(slices.Collect(maps.Values(ImageVars)), name):
+		return true
+	}
+	return slices.ContainsFunc(dockerOnlySuffixes, func(s string) bool { return strings.HasSuffix(name, s) })
+}
+
+func ForNative(set *stack.Set, chosen map[string]string) (kept map[string]string, left, refused []string) {
+	kept = map[string]string{}
+	for _, name := range slices.Sorted(maps.Keys(chosen)) {
+		value := chosen[name]
+		k, named := namedKey(name)
+		switch {
+		case DockerOnly(name):
+			if strings.TrimSpace(value) != "" {
+				left = append(left, name)
+			}
+		case named && releaseReads(set, nil, k), !named && isRawName(name) && slices.Contains(set.Vars, name):
+			kept[name] = value
+		default:
+			refused = append(refused, name)
+		}
+	}
+	return kept, left, refused
 }

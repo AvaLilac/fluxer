@@ -9,6 +9,7 @@ use crate::{
     config::Config,
     constants::{self, AssetExtension},
     mime,
+    public_net_policy::external_url_for_log,
     server::{
         download_stream::DownloadStreamPolicy,
         external::{
@@ -30,6 +31,7 @@ use crate::{
         response::{
             content_disposition_header,
             error::{text, text_with_source},
+            retained_response_bytes,
         },
         state::AppState,
         stored::response::passthrough_head_response,
@@ -44,6 +46,7 @@ use axum::{
     response::Response,
 };
 use bytes::Bytes;
+use fluxer_common::external_media_path::{ExternalPathError, verify_signed_proxy_path};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 const EXTERNAL_SNIFF_PREFIX_BYTES: usize = 8192;
@@ -196,16 +199,12 @@ impl<'a> PreparedExternalRequest<'a> {
         let Some((sig, proxy_path)) = rest.split_once('/') else {
             return Err(Box::new(text(StatusCode::BAD_REQUEST, "Bad Request")));
         };
-        if !fluxer_common::external_media_path::verify_signature(
-            proxy_path,
-            sig,
-            app.cfg.secret_key.as_bytes(),
-        ) {
-            return Err(Box::new(text(StatusCode::UNAUTHORIZED, "Unauthorized")));
-        }
-        let Ok(url) = fluxer_common::external_media_path::reconstruct_original_url(proxy_path)
-        else {
-            return Err(Box::new(text(StatusCode::BAD_REQUEST, "Bad Request")));
+        let url = match verify_signed_proxy_path(proxy_path, sig, app.cfg.secret_key.as_bytes()) {
+            Ok(url) => url,
+            Err(ExternalPathError::InvalidSignature) => {
+                return Err(Box::new(text(StatusCode::UNAUTHORIZED, "Unauthorized")));
+            }
+            Err(_) => return Err(Box::new(text(StatusCode::BAD_REQUEST, "Bad Request"))),
         };
         let url_ext_is_svg =
             image_extension_from_filename(&url_filename(&url)) == Some(AssetExtension::Svg);
@@ -412,7 +411,7 @@ async fn serve_fetched_external(
         app.media.transforms(),
         ServeBytesRequest {
             method,
-            data: data.as_bytes().clone(),
+            data: retained_response_bytes(data),
             content_type,
             cache_identity: &fetched_url,
             filename: &filename,
@@ -441,6 +440,7 @@ pub(in crate::server) async fn fetch_external(
 }
 
 fn external_fetch_error_response(url: &str, err: ExternalFetchError) -> Response {
+    let url = external_url_for_log(url);
     match err {
         ExternalFetchError::BlockedUrl => text_with_source(
             StatusCode::BAD_REQUEST,

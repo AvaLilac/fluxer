@@ -4,6 +4,7 @@ import {Config} from '@app/api/Config';
 import type {UserRow} from '@app/api/database/types/UserTypes';
 import {getCachedInstancePremiumMode} from '@app/api/limits/InstancePremiumModeCache';
 import type {User} from '@app/api/models/User';
+import {isAccountLimited} from '@app/api/user/AccountLimit';
 import {isEnforcementReasonCode} from '@fluxer/constants/src/EnforcementReasons';
 import {
 	DELETED_USER_DISCRIMINATOR,
@@ -56,6 +57,8 @@ const FIELDS_CLEARED_ON_DELETION = [
 	'accent_color',
 	'timezone',
 	'date_of_birth',
+	'attested_age_floor',
+	'age_attested_at',
 	'locale',
 	'premium_flags',
 	'hidden_profile_badges',
@@ -111,7 +114,7 @@ export function isTemporarilyBanned(user: Pick<User, 'flags' | 'tempBannedUntil'
 	);
 }
 
-function isAccountDisabled(user: Pick<User, 'flags' | 'tempBannedUntil'>, now = Date.now()): boolean {
+export function isAccountDisabled(user: Pick<User, 'flags' | 'tempBannedUntil'>, now = Date.now()): boolean {
 	if ((user.flags & UserFlags.DISABLED) === 0n) return false;
 	return user.tempBannedUntil == null || user.tempBannedUntil.getTime() > now;
 }
@@ -126,8 +129,10 @@ export function isSignInRefused(user: Pick<User, 'flags' | 'deletionStartedAt' |
 	return isAccountClosed(user) || isTemporarilyBanned(user);
 }
 
-export function canOwnerRunBots(owner: Pick<User, 'flags' | 'deletionStartedAt' | 'tempBannedUntil'>): boolean {
-	return !isAccountClosed(owner) && !isAccountDisabled(owner);
+export function canOwnerRunBots(
+	owner: Pick<User, 'isBot' | 'isSystem' | 'flags' | 'deletionStartedAt' | 'tempBannedUntil'>,
+): boolean {
+	return !isAccountClosed(owner) && !isAccountDisabled(owner) && !isAccountLimited(owner);
 }
 
 export function isContentHidden(user: Pick<User, 'contentHiddenSince'>, messageId: bigint): boolean {

@@ -4,6 +4,10 @@ import type {DerivedEndpoints} from '@fluxer/config/src/EndpointDerivation';
 
 type RuntimeEnv = 'development' | 'production' | 'test';
 type DatabaseBackend = 'postgres' | 'cassandra';
+export const KV_MODE_NAMES = ['standalone', 'cluster', 'postgres'] as const;
+type KVModeName = (typeof KV_MODE_NAMES)[number];
+export const STORAGE_BACKEND_NAMES = ['s3', 'filesystem'] as const;
+type StorageBackendName = (typeof STORAGE_BACKEND_NAMES)[number];
 type PublicScheme = 'http' | 'https';
 export const CACHE_PURGE_ADAPTER_NAMES = ['none', 'http', 'controller'] as const;
 export type CachePurgeAdapterName = (typeof CACHE_PURGE_ADAPTER_NAMES)[number];
@@ -63,7 +67,11 @@ export interface MasterConfig {
 	endpoints: DerivedEndpoints;
 	internal: {
 		kv: string;
-		kv_mode: 'standalone' | 'cluster';
+		kv_mode: KVModeName;
+		kv_postgres?: {
+			max_connections?: number;
+			max_bytes?: number;
+		};
 		media_proxy: string;
 	};
 	database: {
@@ -90,6 +98,12 @@ export interface MasterConfig {
 			prepared_statements: boolean;
 		};
 	};
+	storage: {
+		backend: StorageBackendName;
+		root: string;
+		uploads_ttl: string;
+		read_only: boolean;
+	};
 	s3?: {
 		endpoint: string;
 		presigned_url_base?: string;
@@ -107,9 +121,11 @@ export interface MasterConfig {
 	services: {
 		api: {
 			port: number;
+			host?: string;
 			headers_timeout_ms: number;
 			request_timeout_ms: number;
 			max_inflight_requests: number;
+			max_concurrent_form_uploads: number;
 			automated_message_deletion_delay_days: number;
 			ip_ban_exempt_ips: Array<string>;
 			donation_proxy_key: string;
@@ -123,6 +139,7 @@ export interface MasterConfig {
 			unfurl_ignored_hosts: Array<string>;
 			app_origin_aliases: Array<string>;
 			discovery_public_endpoint: string;
+			discovery_transport_endpoint: string;
 			worker?: {
 				mode?: 'all_lanes' | 'single_lane' | 'single_task';
 				lane?: 'realtime' | 'unfurl' | 'lifecycle' | 'batch' | 'crosspost';
@@ -168,6 +185,10 @@ export interface MasterConfig {
 		admin: {
 			secret_key_base: string;
 			oauth_client_secret: string;
+			sso: {
+				issuer: string;
+				client_id: string;
+			};
 		};
 	};
 	auth: {
@@ -207,6 +228,7 @@ export interface MasterConfig {
 			from_email: string;
 			from_name: string;
 			reply_to_email: string;
+			support_alert_email?: string;
 			app_base_url: string;
 			webhook_secret?: string;
 			smtp?: SmtpConfig;
@@ -233,6 +255,8 @@ export interface MasterConfig {
 			turn_servers?: Array<VoiceTurnServerConfig>;
 			join_allow_private_endpoints?: boolean;
 			health_interval_ms?: number;
+			participant_sweep_enabled?: boolean;
+			participant_sweep_dry_run?: boolean;
 		};
 		search: {
 			engine: 'elasticsearch' | 'meilisearch' | 'none';
@@ -308,6 +332,7 @@ export interface MasterConfig {
 		store_billing: {
 			sandbox_user_ids?: Array<string>;
 			sandbox_entitles_all: boolean;
+			sandbox_subscriptions: boolean;
 		};
 	};
 	instance: {
@@ -322,22 +347,25 @@ export interface MasterConfig {
 		};
 		account_identity: AccountIdentityModeName | null;
 		tag_style: TagStyleName | null;
+		age_policy: {
+			enabled?: boolean;
+			restricted_regions?: Array<string>;
+		};
 	};
 	payment_disputes: {
 		closure_effective_at?: string;
 	};
 	operator_pass: {
-		sale_opens_at?: string;
 		price_rises_at?: string;
 		grace_minutes: number;
 		now_override?: string;
 		labs_guild_id?: string;
 		labs_operator_role_id?: string;
+		labs_visionary_role_id?: string;
+		labs_operators_channel_id?: string;
 		standard_prices_minor?: Partial<Record<string, number>>;
 		release_lists?: string;
-		transfer_lock_hours?: number;
 		withdrawal_countries?: string;
-		stopped_countries?: string;
 		localized_prices_enabled?: Partial<Record<string, boolean>>;
 		wall_tiers?: string;
 		max_quantity?: number;

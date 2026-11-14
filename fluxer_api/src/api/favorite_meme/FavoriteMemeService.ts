@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type {ApiContext} from '@app/api/ApiContext';
+import {isGuardedAttachmentUrl} from '@app/api/attachment/AttachmentPublicUrl';
 import {makeSignedAttachmentCdnUrl} from '@app/api/attachment/AttachmentUrls';
 import type {ChannelID, MemeID, MessageID, UserID} from '@app/api/BrandedTypes';
 import {createAttachmentID, createMemeID, userIdToChannelId} from '@app/api/BrandedTypes';
 import {Config} from '@app/api/Config';
 import type {ChannelService} from '@app/api/channel/services/ChannelService';
-import {attachmentStorageChannelId, makeAttachmentCdnKey} from '@app/api/channel/services/message/MessageHelpers';
+import {
+	attachmentStorageChannelId,
+	isOwnedEmbedAttachment,
+	makeAttachmentCdnKey,
+} from '@app/api/channel/services/message/MessageHelpers';
 import type {ThreadViewer} from '@app/api/experiment/ChannelThreadsGate';
 import {mapFavoriteMemeToResponse} from '@app/api/favorite_meme/FavoriteMemeModel';
 import type {FavoriteMemeRepository} from '@app/api/favorite_meme/FavoriteMemeRepository';
@@ -58,6 +63,7 @@ type FavoriteMemeMedia = {
 	placeholder: string | null;
 	gifSlug: string | null;
 	gifProvider: string | null;
+	nsfw: boolean;
 };
 
 type ResolvedFavoriteMemeMetadata = {
@@ -69,6 +75,7 @@ type ResolvedFavoriteMemeMetadata = {
 	duration: number | null;
 	isGifv: boolean;
 	placeholder: string | null;
+	nsfw: boolean;
 };
 
 function isAnimatedAttachment(contentType: string, flags: number | undefined): boolean {
@@ -209,6 +216,7 @@ export class FavoriteMemeService {
 			gif_slug: media.gifSlug,
 			gif_provider: media.gifProvider,
 			placeholder: resolved.placeholder,
+			nsfw: resolved.nsfw,
 		});
 		const responseData = mapFavoriteMemeToResponse(favoriteMeme);
 		await this.apiContext.services.gateway.dispatchPresence({
@@ -247,6 +255,7 @@ export class FavoriteMemeService {
 			duration: metadata?.duration && metadata.duration > 0 ? metadata.duration : media.duration,
 			isGifv: resolveFavoriteMemeAnimationFlag(media, metadata),
 			placeholder: metadata?.placeholder ?? media.placeholder,
+			nsfw: media.nsfw || metadata?.nsfw === true,
 		};
 	}
 
@@ -296,6 +305,7 @@ export class FavoriteMemeService {
 			duration: metadata.duration && metadata.duration > 0 ? metadata.duration : null,
 			isGifv: resolveFavoriteMemeAnimationFlag(media, metadata),
 			placeholder: metadata.placeholder ?? null,
+			nsfw: media.nsfw || metadata.nsfw === true,
 		};
 	}
 
@@ -379,6 +389,7 @@ export class FavoriteMemeService {
 			gif_provider: resolvedGif?.provider.meta.name ?? null,
 			media_formats: resolvedGif && media && Object.keys(media).length > 0 ? media : null,
 			placeholder: metadata.placeholder ?? null,
+			nsfw: metadata.nsfw === true,
 		});
 		const responseData = mapFavoriteMemeToResponse(favoriteMeme);
 		await this.apiContext.services.gateway.dispatchPresence({
@@ -428,6 +439,7 @@ export class FavoriteMemeService {
 			gif_provider: existingMeme.gifProvider,
 			media_formats: existingMeme.mediaFormats,
 			placeholder: existingMeme.placeholder,
+			nsfw: existingMeme.nsfw,
 			version: existingMeme.version,
 		};
 		const updatedMeme = await this.favoriteMemeRepository.update(user.id, memeId, updatedRow);
@@ -620,6 +632,7 @@ export class FavoriteMemeService {
 			placeholder: attachment.placeholder ?? null,
 			gifSlug: null,
 			gifProvider: null,
+			nsfw: (attachment.flags & MessageAttachmentFlags.CONTAINS_EXPLICIT_MEDIA) !== 0 || attachment.nsfw === true,
 		};
 	}
 
@@ -629,7 +642,7 @@ export class FavoriteMemeService {
 		channelId: ChannelID,
 	): Promise<FavoriteMemeMedia | null> {
 		const media = embed.image || embed.video || embed.thumbnail;
-		if (!media?.url) {
+		if (!media?.url || (isGuardedAttachmentUrl(media.url) && !isOwnedEmbedAttachment(media))) {
 			return null;
 		}
 		const filename = this.extractFilenameFromUrl(media.url) || fallbackFilename;
@@ -657,6 +670,7 @@ export class FavoriteMemeService {
 			placeholder: media.placeholder ?? null,
 			gifSlug: detectedGif?.slug ?? null,
 			gifProvider: detectedGif?.provider.meta.name ?? null,
+			nsfw: embed.nsfw === true || (media.flags & EmbedMediaFlags.CONTAINS_EXPLICIT_MEDIA) !== 0,
 		};
 	}
 

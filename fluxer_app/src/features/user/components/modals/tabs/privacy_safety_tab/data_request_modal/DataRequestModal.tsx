@@ -24,6 +24,7 @@ import type {BulkDeleteMyMessagesFilter} from '@app/features/user/commands/UserC
 import * as UserCommands from '@app/features/user/commands/UserCommands';
 import styles from '@app/features/user/components/modals/tabs/privacy_safety_tab/data_request_modal/DataRequestModal.module.css';
 import Users from '@app/features/user/state/Users';
+import {getFormattingLocale} from '@app/features/user/utils/LocaleUtils';
 import {
 	SUMMARY_ALL_TIME_DESCRIPTOR as DATE_MODE_ALL_TIME_DESCRIPTOR,
 	DATE_MODE_LABEL_DESCRIPTOR,
@@ -255,7 +256,7 @@ const SUMMARY_UNTIL_DESCRIPTOR = msg({
 	comment: 'Summary row value on the confirm step when only an end date is set. {end} is a localized date.',
 });
 const SUMMARY_BETWEEN_DESCRIPTOR = msg({
-	message: '{start} – {end}',
+	message: '{start} to {end}',
 	comment: 'Summary row value when both a start and end date are set. Both values are localized dates.',
 });
 const SUMMARY_GUILD_EXCLUDE_DESCRIPTOR = msg({
@@ -781,13 +782,13 @@ export const DataRequestModal: React.FC<DataRequestModalProps> = observer(({vari
 			timeRangeValue = i18n._(SUMMARY_ALL_TIME_DESCRIPTOR);
 		} else if (startDate && endDate) {
 			timeRangeValue = i18n._(SUMMARY_BETWEEN_DESCRIPTOR, {
-				start: formatDateForSummary(startDate, i18n.locale),
-				end: formatDateForSummary(endDate, i18n.locale),
+				start: formatDateForSummary(startDate, getFormattingLocale()),
+				end: formatDateForSummary(endDate, getFormattingLocale()),
 			});
 		} else if (startDate) {
-			timeRangeValue = i18n._(SUMMARY_FROM_DESCRIPTOR, {start: formatDateForSummary(startDate, i18n.locale)});
+			timeRangeValue = i18n._(SUMMARY_FROM_DESCRIPTOR, {start: formatDateForSummary(startDate, getFormattingLocale())});
 		} else if (endDate) {
-			timeRangeValue = i18n._(SUMMARY_UNTIL_DESCRIPTOR, {end: formatDateForSummary(endDate, i18n.locale)});
+			timeRangeValue = i18n._(SUMMARY_UNTIL_DESCRIPTOR, {end: formatDateForSummary(endDate, getFormattingLocale())});
 		} else {
 			timeRangeValue = i18n._(SUMMARY_ALL_TIME_DESCRIPTOR);
 		}

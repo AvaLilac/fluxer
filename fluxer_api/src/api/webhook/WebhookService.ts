@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {isGuardedAttachmentUrl} from '@app/api/attachment/AttachmentPublicUrl';
 import {stripOwnAttachmentSignature} from '@app/api/attachment/AttachmentUrls';
 import {
 	type ChannelID,
@@ -454,6 +455,13 @@ export class WebhookService {
 		service,
 	}: WebhookExecuteParams): Promise<Message> {
 		const {webhook, channel} = await this.getTokenAuthenticatedWebhookChannel({webhookId, token});
+		contentModerationService.scanText(data.username ?? null, {
+			userId: webhook.creatorId,
+			guildId: webhook.guildId,
+			channelId: webhook.channelId,
+			messageId: null,
+			surface: 'webhook',
+		});
 		const forumPost = this.resolveForumPost(channel, data);
 		if (channel.isThreadOnly()) {
 			if (service && threadId === undefined) throw new WebhookServiceForumUnsupportedError();
@@ -904,7 +912,7 @@ export class WebhookService {
 		webhookId: WebhookID;
 		avatarUrl: string | null;
 	}): Promise<string | null> {
-		if (!requestedAvatarUrl) return null;
+		if (!requestedAvatarUrl || isGuardedAttachmentUrl(requestedAvatarUrl)) return null;
 		const avatarUrl = stripOwnAttachmentSignature(requestedAvatarUrl);
 		try {
 			const cacheKey = `webhook:${webhookId}:avatar:${avatarUrl}`;

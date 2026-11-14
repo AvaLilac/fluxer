@@ -8,8 +8,10 @@ import "os"
 
 func (i *Instance) OwnerUID() (int, bool) { return 0, false }
 
-func ownerOf(os.FileInfo) (int, bool) { return 0, false }
+var ownerOf = func(os.FileInfo) (int, bool) { return 0, false }
 
 func (i *Instance) giveToOwner(string) error { return nil }
 
-func dirIDs(string) (int, int, bool) { return 0, 0, false }
+func fileIDs(os.FileInfo) (int, int, bool) { return 0, 0, false }
+
+func claimForOwner(*os.Root, string, int, int) error { return nil }

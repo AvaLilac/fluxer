@@ -2,7 +2,11 @@ import {isRecord} from '@fluxer/record_utils/src/RecordGuards';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {BUILD_CHANNEL} from '@electron/common/BuildChannel';
-import {DESKTOP_PREBOOT_THEME_CHANNEL, LOCAL_DEVELOPMENT_INSTANCE_URL} from '@electron/common/Constants';
+import {
+	DESKTOP_PREBOOT_THEME_CHANNEL,
+	LOCAL_DEVELOPMENT_INSTANCE_URL,
+	RELEASE_RENDERER_MEMORY_CHANNEL,
+} from '@electron/common/Constants';
 import {IS_OFFLINE_BUILD} from '@electron/common/OfflineBuild';
 import {readExactPlainRecord} from '@electron/common/PlainRecord';
 import type {
@@ -62,6 +66,8 @@ import type {
 	VirtmicNode,
 } from '@electron/common/Types';
 import {createAccountEnginePreloadAPI} from '@electron/preload/AccountEnginePreload';
+import {installBootFrame} from '@electron/preload/BootFramePreload';
+import {createBootStatePreloadAPI} from '@electron/preload/BootStatePreload';
 import {createBrowserHandoffPreloadAPI} from '@electron/preload/BrowserHandoffPreload';
 import {createDesktopStoragePreloadAPI} from '@electron/preload/DesktopStoragePreload';
 import {createFirstContentPaintSignal} from '@electron/preload/FirstContentPaint';
@@ -69,6 +75,7 @@ import {applyLegacyRawLocalStorage} from '@electron/preload/LegacyRawStorageSeed
 import {createLocalAppPreloadAPI} from '@electron/preload/LocalAppPreload';
 import {createNativeGatewayPreloadAPI} from '@electron/preload/NativeGatewayPreload';
 import {createOtherPlatformTemplatePreloadAPI} from '@electron/preload/OtherPlatformTemplatePreload';
+import {DESKTOP_API_ATTACHMENT_AUTHORIZATION_CHANNEL} from '@fluxer/desktop_ipc/src/ApiAttachmentAuthorizationContract';
 import type {DesktopCapabilityManifest} from '@fluxer/desktop_ipc/src/CapabilityManifest';
 import {DESKTOP_CAPABILITY_MANIFEST_CHANNEL} from '@fluxer/desktop_ipc/src/CapabilityManifest';
 import {DESKTOP_DIRECT_MESSAGES_AVAILABLE_CHANNEL} from '@fluxer/desktop_ipc/src/DirectMessagesContract';
@@ -389,6 +396,8 @@ function reportPrebootTheme(renderer: typeof ipcRenderer): void {
 	}
 }
 
+const releaseBootFrame = installBootFrame(ipcRenderer, (callback) => window.requestAnimationFrame(callback));
+
 applyStartupDesktopWindowClasses();
 
 applyLegacyRawLocalStorage(ipcRenderer);
@@ -415,14 +424,19 @@ const api: ElectronAPI = {
 	...createNativeGatewayPreloadAPI(ipcRenderer),
 	...createAccountEnginePreloadAPI(ipcRenderer),
 	...createOtherPlatformTemplatePreloadAPI(ipcRenderer),
+	...createBootStatePreloadAPI(ipcRenderer),
 	reportLastRoute: (routePath: string): void => {
 		ipcRenderer.send(DESKTOP_LAST_ROUTE_CHANNEL, routePath);
 	},
+	setApiAttachmentAuthorization: (apiEndpoint: string, token: string | null): Promise<boolean> =>
+		ipcRenderer.invoke(DESKTOP_API_ATTACHMENT_AUTHORIZATION_CHANNEL, {apiEndpoint, token}) as Promise<boolean>,
 	reportInstanceProductName: (instanceKey: string, productName: string): void => {
 		ipcRenderer.send(DESKTOP_INSTANCE_PRODUCT_NAME_CHANNEL, {instanceKey, productName});
 	},
-	notifyFirstContentPainted: createFirstContentPaintSignal(ipcRenderer, (callback) =>
-		window.requestAnimationFrame(callback),
+	notifyFirstContentPainted: createFirstContentPaintSignal(
+		ipcRenderer,
+		(callback) => window.requestAnimationFrame(callback),
+		releaseBootFrame,
 	),
 	getDesktopInfo: (): Promise<DesktopInfo> => ipcRenderer.invoke('get-desktop-info'),
 	getGpuInfo: (): Promise<GpuInfo> => ipcRenderer.invoke('get-gpu-info'),
@@ -640,6 +654,7 @@ const api: ElectronAPI = {
 		ipcRenderer.send('set-zoom-factor', factor);
 	},
 	getAccessibilitySupportEnabled: (): Promise<boolean> => ipcRenderer.invoke('get-accessibility-support-enabled'),
+	getSystemLocale: (): Promise<string> => ipcRenderer.invoke('system-locale-get'),
 	onAccessibilitySupportChanged: (callback: (enabled: boolean) => void): (() => void) => {
 		const handler = (_event: Electron.IpcRendererEvent, enabled: boolean): void => callback(enabled);
 		ipcRenderer.on('accessibility-support-changed', handler);
@@ -937,6 +952,10 @@ ipcRenderer.on('spellcheck-engine-resolved', (_event, info: SpellcheckResolvedEn
 	if (info?.mode === 'hunspell') {
 		installSpellcheckProvider();
 	}
+});
+
+ipcRenderer.on(RELEASE_RENDERER_MEMORY_CHANNEL, () => {
+	webFrame.clearCache();
 });
 
 contextBridge.exposeInMainWorld('electron', api);

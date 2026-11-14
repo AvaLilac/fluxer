@@ -34,6 +34,9 @@ const (
 	OverlayProxy               Overlay = "proxy"
 	OverlayTunnel              Overlay = "tunnel"
 	OverlayExternalObjectStore Overlay = "external-object-store"
+	OverlayFilesystemStore     Overlay = "filesystem-object-store"
+	OverlayKVPostgres          Overlay = "kv-postgres"
+	OverlayRustServer          Overlay = "rust-server"
 	OverlayIPv6                Overlay = "ipv6"
 	OverlayExternalVoice       Overlay = "external-voice"
 )
@@ -42,11 +45,17 @@ var OverlayFiles = map[Overlay]string{
 	OverlayProxy:               "docker-compose.proxy.yml",
 	OverlayTunnel:              "tunnel.compose.yml",
 	OverlayExternalObjectStore: "external-object-store.compose.yml",
+	OverlayFilesystemStore:     "filesystem-object-store.compose.yml",
+	OverlayKVPostgres:          "kv-postgres.compose.yml",
+	OverlayRustServer:          "rust-server.compose.yml",
 	OverlayIPv6:                "ipv6.compose.yml",
 	OverlayExternalVoice:       "external-voice.compose.yml",
 }
 
-var overlayOrder = []Overlay{OverlayProxy, OverlayTunnel, OverlayExternalObjectStore, OverlayIPv6, OverlayExternalVoice}
+var overlayOrder = []Overlay{
+	OverlayProxy, OverlayTunnel, OverlayExternalObjectStore, OverlayFilesystemStore,
+	OverlayKVPostgres, OverlayRustServer, OverlayIPv6, OverlayExternalVoice,
+}
 
 var MountedFiles = map[string][]string{
 	Caddyfile: {"edge"},
@@ -65,6 +74,7 @@ var madeDirs = append(slices.Sorted(maps.Keys(MountedDirs)), "caddy.d/sites")
 var (
 	ErrUnknownOverlay  = errors.New("stack: unknown overlay")
 	ErrOverlayConflict = errors.New("stack: the proxy and tunnel overlays can't be used together")
+	ErrStoreConflict   = errors.New("stack: files on this machine and your own object store can't be used together")
 	ErrMissingFile     = errors.New("stack: the release has no such file")
 )
 
@@ -87,6 +97,9 @@ func NormalizeOverlays(overlays []Overlay) ([]Overlay, error) {
 	if seen[OverlayProxy] && seen[OverlayTunnel] {
 		return nil, ErrOverlayConflict
 	}
+	if seen[OverlayExternalObjectStore] && seen[OverlayFilesystemStore] {
+		return nil, ErrStoreConflict
+	}
 	out := make([]Overlay, 0, len(seen))
 	for _, o := range overlayOrder {
 		if seen[o] {
@@ -106,6 +119,15 @@ func OverlaysFor(settings map[string]string) []Overlay {
 	}
 	if strings.TrimSpace(settings["storage.endpoint"]) != "" {
 		out = append(out, OverlayExternalObjectStore)
+	}
+	if FilesystemStorage(settings) {
+		out = append(out, OverlayFilesystemStore)
+	}
+	if KVPostgres(settings) {
+		out = append(out, OverlayKVPostgres)
+	}
+	if RustSingle(settings) {
+		out = append(out, OverlayRustServer)
 	}
 	if on, err := strconv.ParseBool(strings.TrimSpace(settings["network.ipv6"])); err == nil && on {
 		out = append(out, OverlayIPv6)
@@ -223,10 +245,22 @@ func renderFiles(set *Set, selected []Overlay, images map[string]string, project
 		return nil, nil, err
 	}
 	out := []renderedFile{{ComposeFile, compose}, {Caddyfile, caddy}}
+	before := [][]byte{compose}
 	for _, o := range overlays {
 		data, err := ReadFile(set, OverlayFiles[o])
 		if err != nil {
 			return nil, nil, err
+		}
+		if o == OverlayRustServer {
+			if data, err = renderRustOverlay(data, before); err != nil {
+				return nil, nil, err
+			}
+		}
+		before = append(before, data)
+		if set.Release != LegacyRelease {
+			if data, err = pinImages(data, set.Release, images); err != nil {
+				return nil, nil, err
+			}
 		}
 		out = append(out, renderedFile{OverlayFiles[o], data})
 	}
@@ -343,7 +377,11 @@ func RenderAt(set *Set, selected []Overlay, images map[string]string, project, d
 		}
 	}
 	gen := FilesDir(dir, root)
-	if err := os.MkdirAll(gen, 0o755); err != nil {
+	if root {
+		if err := os.MkdirAll(gen, 0o755); err != nil {
+			return nil, err
+		}
+	} else if err := MakeGenerated(gen); err != nil {
 		return nil, err
 	}
 	changed, stale, err := plan(gen, files, overlays)
@@ -386,7 +424,19 @@ func restartNeeded(changed []string) []string {
 	return out
 }
 
-const tmpSuffix = ".rexctl-tmp"
+func MakeGenerated(path string) error {
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("stack: %s is not a directory", path)
+	}
+	return nil
+}
 
 func writeAll(dir string, files []renderedFile) error {
 	var staged []string
@@ -396,9 +446,8 @@ func writeAll(dir string, files []renderedFile) error {
 		}
 	}
 	for _, f := range files {
-		tmp := filepath.Join(dir, f.name+tmpSuffix)
-		if err := writeSynced(tmp, f.data); err != nil {
-			os.Remove(tmp)
+		tmp, err := stage(dir, f.name, f.data)
+		if err != nil {
 			cleanup()
 			return err
 		}
@@ -412,10 +461,14 @@ func writeAll(dir string, files []renderedFile) error {
 	var done []previous
 	restore := func() {
 		for _, p := range done {
-			if p.exists {
-				writeSynced(p.path, p.data)
-			} else {
+			if !p.exists {
 				os.Remove(p.path)
+				continue
+			}
+			if tmp, err := stage(filepath.Dir(p.path), filepath.Base(p.path), p.data); err == nil {
+				if os.Rename(tmp, p.path) != nil {
+					os.Remove(tmp)
+				}
 			}
 		}
 	}
@@ -438,18 +491,25 @@ func writeAll(dir string, files []renderedFile) error {
 	return nil
 }
 
-func writeSynced(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+func stage(dir, name string, data []byte) (string, error) {
+	f, err := os.CreateTemp(dir, "."+name+".rexctl-tmp-*")
 	if err != nil {
-		return err
+		return "", err
 	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
+	path := f.Name()
+	err = f.Chmod(0o644)
+	if err == nil {
+		_, err = f.Write(data)
 	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
+	if err == nil {
+		err = f.Sync()
 	}
-	return f.Close()
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(path)
+		return "", err
+	}
+	return path, nil
 }

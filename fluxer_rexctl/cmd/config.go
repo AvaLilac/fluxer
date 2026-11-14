@@ -148,6 +148,11 @@ func (v *configView) fallback(k settings.Key, inst *instance.Instance) string {
 		return settings.EdgeBundled
 	case settings.IPv6:
 		return "false"
+	case settings.SignedMedia:
+		if mode := inst.Setting(settings.SignatureModeVar); mode != "" {
+			return mode
+		}
+		return "off"
 	}
 	if len(k.Vars) == 0 {
 		return ""
@@ -566,6 +571,15 @@ func runConfigChange(ctx context.Context, app *App, changes []configChange, extr
 	}
 	if len(deployment) == 0 {
 		return app.Locked(ctx, v.inst, func() error { return finish(nil) })
+	}
+	if v.inst.State.IsNative() {
+		return app.Locked(ctx, v.inst, func() error {
+			change, err := applyNativeSettings(ctx, app, v.inst, deployment)
+			if err != nil {
+				return err
+			}
+			return finish(change)
+		})
 	}
 	return app.ChangeSettings(ctx, v.inst, func(e *engine.Engine) error {
 		change, err := applySettings(ctx, app, v.inst, e, deployment, "Applying the new settings")

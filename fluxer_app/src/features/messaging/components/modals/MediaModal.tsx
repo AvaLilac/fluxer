@@ -32,6 +32,8 @@ import {
 	VIDEO_PREVIEW_DESCRIPTOR,
 	type ZoomState,
 } from '@app/features/messaging/components/modals/media_modal/shared';
+import {useApiAttachmentPlaybackSrc, useApiAttachmentSrc} from '@app/features/messaging/hooks/useApiAttachmentSources';
+import {useNearViewport} from '@app/features/messaging/hooks/useNearViewport';
 import AttachmentUrlRefresher from '@app/features/messaging/state/AttachmentUrlRefresher';
 import {remFromPx} from '@app/features/theme/layout/RemFromPx';
 import * as MediaViewerCommands from '@app/features/ui/commands/MediaViewerCommands';
@@ -44,6 +46,7 @@ import MobileLayout from '@app/features/ui/state/MobileLayout';
 import OverlayStack from '@app/features/ui/state/OverlayStack';
 import {Tooltip} from '@app/features/ui/tooltip/Tooltip';
 import {formatRoundedPercentage} from '@app/features/ui/utils/PercentageFormatting';
+import {getFormattingLocale} from '@app/features/user/utils/LocaleUtils';
 import {MobileVideoViewer} from '@app/features/voice/components/modals/MobileVideoViewer';
 import {useLingui} from '@lingui/react/macro';
 import {clsx} from 'clsx';
@@ -82,6 +85,38 @@ const FITTED_PAN_ZOOM_INFO: PanZoomInfo = {
 	isDefault: true,
 	canZoomIn: true,
 	canZoomOut: false,
+};
+
+const ThumbnailVideo: FC<{src: string; label: string}> = ({src, label}) => {
+	const playbackSrc = useApiAttachmentPlaybackSrc(src);
+	return (
+		<video
+			className={styles.thumbnailVideo}
+			src={playbackSrc}
+			muted
+			playsInline
+			preload="metadata"
+			aria-label={label}
+			onError={() => void AttachmentUrlRefresher.refresh(src, {force: true})}
+			data-flx="messaging.media-modal.thumbnail-video"
+		/>
+	);
+};
+
+const ThumbnailImage: FC<{src: string; alt: string}> = ({src, alt}) => {
+	const {ref, isNearViewport} = useNearViewport<HTMLImageElement>({rememberKey: src});
+	const displaySrc = useApiAttachmentSrc(src, isNearViewport);
+	return (
+		<img
+			ref={ref}
+			src={displaySrc}
+			alt={alt}
+			className={styles.thumbnailImage}
+			draggable={false}
+			onError={() => void AttachmentUrlRefresher.refresh(src, {force: true})}
+			data-flx="messaging.media-modal.thumbnail-image"
+		/>
+	);
 };
 
 export const MediaModal: FC<MediaModalProps> = observer(
@@ -616,14 +651,9 @@ export const MediaModal: FC<MediaModalProps> = observer(
 												let thumbnailContent: ReactNode;
 												if (thumb.type === 'video' || thumb.type === 'gifv') {
 													thumbnailContent = (
-														<video
-															className={styles.thumbnailVideo}
+														<ThumbnailVideo
 															src={thumb.src}
-															muted
-															playsInline
-															preload="metadata"
-															aria-label={thumb.alt ?? i18n._(VIDEO_PREVIEW_DESCRIPTOR)}
-															onError={() => void AttachmentUrlRefresher.refresh(thumb.src, {force: true})}
+															label={thumb.alt ?? i18n._(VIDEO_PREVIEW_DESCRIPTOR)}
 															data-flx="messaging.media-modal.thumbnail-video"
 														/>
 													);
@@ -638,12 +668,9 @@ export const MediaModal: FC<MediaModalProps> = observer(
 													);
 												} else {
 													thumbnailContent = (
-														<img
+														<ThumbnailImage
 															src={thumb.src}
 															alt={thumb.alt ?? ''}
-															className={styles.thumbnailImage}
-															draggable={false}
-															onError={() => void AttachmentUrlRefresher.refresh(thumb.src, {force: true})}
 															data-flx="messaging.media-modal.thumbnail-image"
 														/>
 													);
@@ -691,7 +718,12 @@ export const MediaModal: FC<MediaModalProps> = observer(
 									onPointerLeave={handleHudPointerLeave}
 									data-flx="messaging.media-modal.bottom-info-bar"
 								>
-									{[fileName, dimensions, fileSize, formatRoundedPercentage(i18n.locale, panZoomInfo.zoomPercent)]
+									{[
+										fileName,
+										dimensions,
+										fileSize,
+										formatRoundedPercentage(getFormattingLocale(), panZoomInfo.zoomPercent),
+									]
 										.filter(Boolean)
 										.map((part, index) => (
 											<span

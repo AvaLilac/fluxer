@@ -68,6 +68,8 @@ type upgradeCheckJSON struct {
 
 func newUpgradeCmd(app *App) *cobra.Command {
 	var f upgradeFlags
+	var migrateList string
+	var experimental bool
 	c := &cobra.Command{
 		Use:   "upgrade",
 		Short: "Upgrade rexctl and Fluxer to the latest release",
@@ -76,11 +78,17 @@ func newUpgradeCmd(app *App) *cobra.Command {
 			if !c.Flags().Changed("backup") {
 				f.Backup = ""
 			}
+			if migrateList != "" && !experimental {
+				return ui.Usage("Pass --migrate together with --experimental-native.")
+			}
 			err := runUpgrade(c.Context(), app, &f)
 			if !f.Check && !f.DryRun {
 				notifyUpgrade(c.Context(), app, err)
 			}
-			return err
+			if err != nil || f.Check || f.DryRun || f.Prefetch || !experimental {
+				return err
+			}
+			return offerMigrations(c.Context(), app, migrateList)
 		},
 	}
 	fl := c.Flags()
@@ -90,6 +98,8 @@ func newUpgradeCmd(app *App) *cobra.Command {
 	fl.BoolVar(&f.NoBackup, "no-backup", false, "skip the backup before upgrading")
 	fl.StringVar(&f.Backup, "backup", backup.ScopeFull, "what the backup before this upgrade holds, full or without-uploads. When the upgrade changes how uploads are stored, the backup includes them anyway.")
 	fl.BoolVar(&f.DryRun, "dry-run", false, "show what would happen without changing anything")
+	fl.BoolVar(&experimental, "experimental-native", false, "after the upgrade, show the experimental changes that run Fluxer with fewer services, and make the ones you pick")
+	fl.StringVar(&migrateList, "migrate", "", "with --experimental-native, make these changes after the upgrade, separated by commas: docker, kv, rust and storage")
 	fl.StringVar(&f.Resume, release.ResumeFlag, "", "")
 	_ = fl.MarkHidden(release.ResumeFlag)
 	app.jsonFlag(c)
@@ -134,6 +144,9 @@ func runUpgrade(ctx context.Context, app *App, f *upgradeFlags) error {
 	}
 	if err := managed(inst); err != nil {
 		return err
+	}
+	if inst.State.IsNative() {
+		return runNativeUpgrade(ctx, app, inst, f)
 	}
 	if !f.DryRun && inst.State.Upgrade != nil {
 		if handedOver, err := updateBeforeRecovery(ctx, app, f.Resume, f.To, "rexctl upgrade"); err != nil || handedOver {
@@ -278,7 +291,7 @@ func switchBack(ctx context.Context, app *App, inst *instance.Instance, e *engin
 	s, changed, err := dropScheduledBackup(ctx, inst, e)
 	if err != nil {
 		if errors.Is(err, host.ErrNeedsRoot) {
-			return nil, ui.Refused(fmt.Sprintf("Automatic upgrades pass --backup without-uploads, which rexctl %s may not know. Changing that needs root.", to), "Run sudo rexctl upgrade with the same flags.")
+			return nil, ui.Refused(fmt.Sprintf("Automatic upgrades pass --backup without-uploads, which rexctl %s may not know. Changing that needs root, and this machine has no sudo.", to), "Run "+rootAgain(inst.Dir)+" as root.")
 		}
 		return nil, ui.Wrap(err, fmt.Sprintf("Couldn't change automatic upgrades for rexctl %s.", to), "Run rexctl auto-upgrade on again without --backup and with your other flags, then run this upgrade again.")
 	}
@@ -414,6 +427,11 @@ func runUpgradeCheck(ctx context.Context, app *App, f *upgradeFlags) error {
 			return ierr
 		}
 		return err
+	case inst.State.IsVoice():
+		if f.To != "" {
+			return ui.Usage("A voice machine follows the release its instance runs. Run rexctl upgrade --check without --to.")
+		}
+		return runVoiceMachineCheck(ctx, app, inst)
 	default:
 		cur = inst.State.Release
 	}
@@ -496,6 +514,9 @@ func resumeUpgrade(ctx context.Context, app *App, f *upgradeFlags) error {
 	if err != nil {
 		return err
 	}
+	if inst.State.IsNative() {
+		return resumeNativeUpgrade(ctx, app, inst, f)
+	}
 	return app.Change(ctx, inst, func(e *engine.Engine) error {
 		p := inst.State.Upgrade
 		if p == nil || p.Phase != f.Resume {
@@ -505,7 +526,7 @@ func resumeUpgrade(ctx context.Context, app *App, f *upgradeFlags) error {
 			clearUpgrade(inst)
 			return ui.Failed(fmt.Sprintf("rexctl didn't update to %s.", p.To), "Run rexctl upgrade again.")
 		}
-		if err := refreshBootUnit(ctx, inst, e, nil); err != nil {
+		if err := refreshBootUnit(ctx, app, inst, e, nil); err != nil {
 			app.UI.Detail("%v", err)
 		}
 		return guardedUpgradeStack(ctx, app, inst, e, f)
@@ -538,7 +559,7 @@ func writeUpgradeText(inst *instance.Instance, to, text string) string {
 	if loggedThisAttempt(inst, to) {
 		flag = os.O_CREATE | os.O_WRONLY | os.O_APPEND
 	}
-	f, err := os.OpenFile(path, flag, 0o600)
+	f, err := openStateLog(inst, upgradeLog(to), flag)
 	if err != nil {
 		return ""
 	}
@@ -547,6 +568,15 @@ func writeUpgradeText(inst *instance.Instance, to, text string) string {
 		return ""
 	}
 	return path
+}
+
+func openStateLog(inst *instance.Instance, name string, flag int) (*os.File, error) {
+	root, err := os.OpenRoot(inst.Dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.OpenFile(filepath.Join(instance.StateDirName, name), flag, 0o600)
 }
 
 func printUpgradePlan(ctx context.Context, app *App, inst *instance.Instance, f *upgradeFlags, needSelf bool, from, version string) {
@@ -626,7 +656,7 @@ func printFullBackupSpace(ctx context.Context, app *App, inst *instance.Instance
 func printSpace(ctx context.Context, app *App, inst *instance.Instance, e *engine.Engine, next map[string]string, f *upgradeFlags, to string) {
 	for _, sp := range upgradeSpace(ctx, app, inst, e, next, f) {
 		if sp.Short() {
-			app.UI.Warn(spaceLine(sp, to), spaceFix(e, sp))
+			app.UI.Warn(spaceLine(sp, to), spaceFix(e, sp, "rexctl upgrade"))
 		} else {
 			app.UI.Info("%s", spaceLine(sp, to))
 		}
@@ -643,28 +673,128 @@ func embeddedRefs() map[string]string {
 
 func upgradeSpace(ctx context.Context, app *App, inst *instance.Instance, e *engine.Engine, next map[string]string, f *upgradeFlags) []checks.Space {
 	old := e.Named(inst.Project(), inst.Dir)
-	pull, err := checks.PullNeed(ctx, e, inst.State.Images.Refs, next)
-	if err != nil {
-		app.UI.Detail("%v", err)
-	}
+	pull := upgradePull(ctx, inst, e, next)
 	var saved uint64
 	if !f.Prefetch && !f.NoBackup {
+		var err error
 		if saved, err = estimateBackup(ctx, inst, old, upgradeScope(f)); err != nil {
 			app.UI.Detail("%v", err)
 		}
 	}
-	return checkEnv(ctx, inst, e, old).Space(pull, saved)
+	return checkEnv(ctx, inst, e, old).UpgradeSpace(pull, saved)
+}
+
+func upgradePull(ctx context.Context, inst *instance.Instance, e *engine.Engine, next map[string]string) uint64 {
+	images, _ := stack.EmbeddedImages()
+	if next == nil {
+		return checks.ReleaseSize(ctx, e, images, slices.Sorted(maps.Values(inst.State.Images.Refs)))
+	}
+	chosen := inst.State.Settings
+	run := checks.Running{
+		Voice:         stack.VoiceBundled(chosen[settings.VoiceBundled]),
+		ExternalStore: strings.TrimSpace(chosen[settings.StorageEndpoint]) != "",
+		Chosen:        func(k string) string { return chosen[k] },
+	}
+	return e.PullNeed(ctx, images, checks.RunningRefs(stack.Embedded(), next, run), nil)
 }
 
 func spaceLine(sp checks.Space, to string) string {
 	return fmt.Sprintf("Fluxer %s needs about %s of free disk space in %s, and %s is free.", to, ui.Bytes(int64(sp.Need)), sp.Path, ui.Bytes(int64(sp.Free)))
 }
 
-func spaceFix(e *engine.Engine, sp checks.Space) string {
+func spaceFix(e *engine.Engine, sp checks.Space, again string) string {
 	if sp.Images {
-		return fmt.Sprintf("Free up space there, for example with %s image prune -a, which removes the images no container uses. Then run rexctl upgrade again.", strings.ToLower(e.Kind.Name()))
+		return fmt.Sprintf("Free up space there, for example with %s image prune -a, which removes the images no container uses. Then run %s again.", strings.ToLower(e.Kind.Name()), again)
 	}
-	return "Free up space there, then run rexctl upgrade again."
+	return fmt.Sprintf("Free up space there, then run %s again.", again)
+}
+
+func upgradeSpaceFix(ctx context.Context, app *App, inst *instance.Instance, e *engine.Engine, next map[string]string, f *upgradeFlags, sp checks.Space) string {
+	fix := spaceFix(e, sp, "rexctl upgrade")
+	if f.NoBackup || f.Prefetch || !holdsBackups(inst, sp) {
+		return fix
+	}
+	fits := func(alt *upgradeFlags) bool {
+		for _, other := range upgradeSpace(ctx, app, inst, e, next, alt) {
+			if holdsBackups(inst, other) {
+				return !other.Short()
+			}
+		}
+		return false
+	}
+	if f.Backup != backup.ScopeWithoutUploads {
+		lean := *f
+		lean.Backup = backup.ScopeWithoutUploads
+		for _, alt := range upgradeSpace(ctx, app, inst, e, next, &lean) {
+			if holdsBackups(inst, alt) && !alt.Short() {
+				fix += fmt.Sprintf(" Or run rexctl upgrade --backup without-uploads, which needs about %s there.", ui.Bytes(int64(alt.Need)))
+			}
+		}
+	}
+	fix += keepFewerFix(inst, sp.Need-sp.Free)
+	none := *f
+	none.NoBackup = true
+	if fits(&none) {
+		fix += " To upgrade with no backup, run rexctl upgrade --no-backup. If the upgrade then goes wrong, there is no backup from before it to restore."
+	}
+	return fix
+}
+
+func holdsBackups(inst *instance.Instance, sp checks.Space) bool {
+	a, errA := host.DiskID(sp.Path)
+	b, errB := host.DiskID(inst.BackupDir())
+	if errA != nil || errB != nil {
+		return sp.Path == inst.BackupDir()
+	}
+	return a == b
+}
+
+func makeRoom(ctx context.Context, app *App, inst *instance.Instance, e *engine.Engine, room []checks.Space, from, to string) bool {
+	older := inst.State.PreviousRelease
+	if older == "" || older == from || older == to {
+		return false
+	}
+	var store *checks.Space
+	for i, sp := range room {
+		if !sp.Short() {
+			continue
+		}
+		if !sp.Images {
+			return false
+		}
+		store = &room[i]
+	}
+	if store == nil {
+		return false
+	}
+	refs := release.OnlyIn(inst, older, from, to)
+	freed, err := e.UniqueSize(ctx, refs)
+	if err != nil {
+		app.UI.Detail("%v", err)
+		return false
+	}
+	if freed == 0 || store.Free+freed < store.Need {
+		return false
+	}
+	sizes := map[string]uint64{}
+	var total uint64
+	for _, ref := range refs {
+		if n, found, err := e.ImageSize(ctx, ref); err == nil && found {
+			sizes[ref] = n
+			total += n
+		}
+	}
+	if err := release.RecordImageSizes(inst, older, sizes); err != nil {
+		app.UI.Detail("%v", err)
+	}
+	if err := e.RemoveImages(ctx, refs); err != nil {
+		app.UI.Detail("%v", err)
+		return false
+	}
+	olderShort, _ := versionPair(older, to)
+	_, toShort := versionPair(from, to)
+	app.UI.Info("Removed the images of %s to make room for Fluxer %s. To go back to it, rexctl rollback needs to download them again, which needs about %s of free disk space.", fluxerName(olderShort), toShort, ui.Bytes(int64(2*total)))
+	return true
 }
 
 func upgradeStack(ctx context.Context, app *App, inst *instance.Instance, e *engine.Engine, f *upgradeFlags) error {
@@ -720,10 +850,14 @@ func upgradeStack(ctx context.Context, app *App, inst *instance.Instance, e *eng
 	}
 	f = backupFlagsFor(app, inst, from, set, next, f, toShort)
 	old := e.Named(inst.Project(), inst.Dir)
-	for _, sp := range upgradeSpace(ctx, app, inst, e, next.Images.Refs, f) {
+	room := upgradeSpace(ctx, app, inst, e, next.Images.Refs, f)
+	if !f.Prefetch && makeRoom(ctx, app, inst, e, room, from, to) {
+		room = upgradeSpace(ctx, app, inst, e, next.Images.Refs, f)
+	}
+	for _, sp := range room {
 		if sp.Short() {
 			clearUpgrade(inst)
-			return ui.Refused(spaceLine(sp, toShort)+" "+capitalise(fluxerName(fromShort))+" is still running.", spaceFix(e, sp))
+			return ui.Refused(spaceLine(sp, toShort)+" "+capitalise(fluxerName(fromShort))+" is still running.", upgradeSpaceFix(ctx, app, inst, e, next.Images.Refs, f, sp))
 		}
 	}
 	if !f.Prefetch {
@@ -759,7 +893,7 @@ func upgradeStack(ctx context.Context, app *App, inst *instance.Instance, e *eng
 			}
 			report := ui.Wrap(err, fmt.Sprintf("Couldn't back up your instance. %s is still running.", capitalise(fluxerName(fromShort))), fix)
 			var be *ui.ExitError
-			if errors.As(backupCreateErr(err), &be) && be.Err == nil {
+			if errors.As(backupCreateErr(inst, err), &be) && be.Err == nil {
 				report.Msg = be.Msg + " " + capitalise(fluxerName(fromShort)) + " is still running."
 				report.Fix = be.Fix
 			}
@@ -1253,7 +1387,7 @@ func writeFailureLog(ctx context.Context, inst *instance.Instance, p *engine.Pro
 		}
 	}
 	path := inst.Path(instance.StateDirName, name)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := openStateLog(inst, name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
 	if err != nil {
 		return ""
 	}
@@ -1277,11 +1411,15 @@ func writeBackupLog(inst *instance.Instance, name string, cause error) string {
 	if errors.As(cause, &dump) && dump.Output != "" {
 		text += "\n" + dump.Output + "\n"
 	}
-	path := inst.Path(instance.StateDirName, name)
-	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+	f, err := openStateLog(inst, name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+	if err != nil {
 		return ""
 	}
-	return path
+	defer f.Close()
+	if _, err := f.WriteString(text); err != nil {
+		return ""
+	}
+	return inst.Path(instance.StateDirName, name)
 }
 
 func notRunning(ctx context.Context, p *engine.Project) []string {
@@ -1460,11 +1598,11 @@ func finishUpgrade(ctx context.Context, app *App, inst *instance.Instance, e *en
 		return ui.Wrap(err, "Couldn't save your instance's state.", "Run rexctl doctor to see what's wrong.")
 	}
 	if loaded, err := deploy.Load(ctx, inst, e); err == nil {
-		if err := refreshBootUnit(ctx, inst, e, loaded); err != nil {
+		if err := refreshBootUnit(ctx, app, inst, e, loaded); err != nil {
 			app.UI.Detail("%v", err)
 		}
 	}
-	if err := release.Prune(ctx, inst, e); err != nil {
+	if err := release.PruneOlder(ctx, inst, e); err != nil {
 		app.UI.Detail("%v", err)
 	}
 	_, toShort := versionPair(pend.From, pend.To)
@@ -1573,7 +1711,7 @@ func selfUpdateError(err error, inst *instance.Instance) error {
 	case errors.Is(err, context.Canceled):
 		return err
 	case errors.Is(err, fs.ErrPermission):
-		fix := fmt.Sprintf("Run sudo rexctl upgrade --dir %s.", inst.Dir)
+		fix := "Run " + sudoAgain(inst.Dir) + "."
 		switch {
 		case runtime.GOOS == "windows":
 			fix = "Run rexctl upgrade from a terminal opened as administrator."
@@ -1649,7 +1787,7 @@ func fluxerName(short string) string {
 
 func versionPair(a, b string) (string, string) {
 	sa, sb := release.Short(a), release.Short(b)
-	if sa == sb {
+	if sa == sb || !release.Valid(a) || !release.Valid(b) {
 		return a, b
 	}
 	return sa, sb

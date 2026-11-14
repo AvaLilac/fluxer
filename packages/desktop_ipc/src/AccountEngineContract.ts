@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 export const ACCOUNT_ENGINE_CHANNELS = Object.freeze({
+	isAvailable: 'account-engine:is-available',
 	connect: 'account-engine:connect',
 	port: 'account-engine:port',
 	accounts: 'account-engine:accounts',
 } as const);
-
-export const ACCOUNT_ENGINE_AVAILABLE_RENDERER_ARG = '--fluxer-account-engine=1';
 
 export const ACCOUNT_ENGINE_LIMITS = Object.freeze({
 	accountKeyMaxChars: 4096,
@@ -261,7 +260,11 @@ function mentionedUserName(value: unknown): string | null {
 	return null;
 }
 
-export function inlineMentionedUserNames(content: string, mentions: unknown): string {
+export function inlineMentionedUserNames(
+	content: string,
+	mentions: unknown,
+	formatName: (name: string) => string = (name) => name,
+): string {
 	if (!content || !Array.isArray(mentions) || mentions.length === 0) return content;
 	const names = new Map<string, string>();
 	for (const mention of mentions) {
@@ -271,6 +274,6 @@ export function inlineMentionedUserNames(content: string, mentions: unknown): st
 	}
 	return content.replace(USER_MENTION_PATTERN, (token, userId: string) => {
 		const name = names.get(userId);
-		return name === undefined ? token : `@${name}`;
+		return name === undefined ? token : `@${formatName(name)}`;
 	});
 }

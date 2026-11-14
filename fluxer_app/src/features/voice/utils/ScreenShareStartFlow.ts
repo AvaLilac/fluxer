@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {handleMediaPermissionBlocked} from '@app/features/permissions/system/commands/MacPermissionsModalCommands';
 import {Logger} from '@app/features/platform/utils/AppLogger';
+import {isInsecureBrowserContext} from '@app/features/platform/utils/SecureContext';
 import {getElectronAPI, supportsDesktopScreenShareAudioCapture} from '@app/features/ui/utils/NativeUtils';
 import MediaEngine from '@app/features/voice/engine/MediaEngineFacade';
 import ScreenShareCodecNegotiation from '@app/features/voice/engine/ScreenShareCodecNegotiation';
@@ -363,7 +365,7 @@ function resolveConfiguredScreenShareAudio(request: ConfiguredScreenShareRequest
 			request.preferredDisplaySurface,
 		);
 	if (!includeAudio && request.shareContext !== 'device' && supportsDesktopScreenShareAudioCapture()) {
-		logger.info('Screen share audio not requested for this surface', {
+		logger.debug('Screen share audio not requested for this surface', {
 			sourceId: request.sourceId,
 			preferredDisplaySurface: request.preferredDisplaySurface,
 			shareAppAudio: VoiceSettings.getShareAppAudio(),
@@ -527,7 +529,7 @@ async function runConfiguredDisplayScreenShare(
 				...entry,
 			}));
 			if (requestedNativePickerAudioOnLinux && options?.preferredDisplaySurface === 'window') {
-				logger.info(
+				logger.debug(
 					'Wayland window share cannot identify the shared window; capturing the desktop mix without Fluxer instead',
 					{sourceMode},
 				);
@@ -633,7 +635,9 @@ async function runConfiguredDisplayScreenShare(
 				ActiveScreenShareSource.setWindowAudioScope(appShareAudioScope ?? 'window');
 			}
 			if (captured && useWaylandPortal) {
-				ActiveScreenShareSource.setPublishedSource('wayland', null);
+				ActiveScreenShareSource.setPublishedSource('wayland', null, {
+					portalSurface: options?.preferredDisplaySurface,
+				});
 				ActiveScreenShareSource.setSourceDimensions(null);
 			}
 			if (!captured && useWaylandPortal && mode !== 'switch') {
@@ -785,6 +789,10 @@ export async function startConfiguredDisplayScreenShare(
 	sourceId?: string | null,
 	options?: ConfiguredDisplayScreenShareOptions,
 ): Promise<boolean> {
+	if (isInsecureBrowserContext()) {
+		handleMediaPermissionBlocked('screen');
+		return false;
+	}
 	return scheduleConfiguredScreenShareMutation(async () => {
 		let didStart = false;
 		await executeScreenShareOperation(async () => {
@@ -817,7 +825,7 @@ export async function restartActiveScreenShareCapture(): Promise<boolean> {
 		});
 		return false;
 	}
-	logger.info('Restarting the live screen share capture because its geometry did not take', {
+	logger.debug('Restarting the live screen share capture because its geometry did not take', {
 		publishedSource,
 		sourceId,
 	});
@@ -862,12 +870,12 @@ async function resolveDeviceShareAudioDeviceId(videoDeviceId: string): Promise<s
 		const devices = await navigator.mediaDevices.enumerateDevices();
 		const pairedInput = findPairedDeviceShareAudioInput(devices, videoDeviceId);
 		if (!pairedInput) {
-			logger.info('The shared capture device has no audio input of its own, sharing it without audio', {
+			logger.debug('The shared capture device has no audio input of its own, sharing it without audio', {
 				videoDeviceId,
 			});
 			return undefined;
 		}
-		logger.info('Using the capture device own audio input for the device share', {
+		logger.debug('Using the capture device own audio input for the device share', {
 			videoDeviceId,
 			audioDeviceId: pairedInput.deviceId,
 		});

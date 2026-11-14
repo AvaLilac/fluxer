@@ -19,7 +19,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use base64::prelude::*;
 use envelope::Urgency;
-use fluxer_svc::shutdown::wait_for_shutdown;
 use quota::Quota;
 use rand::Rng as _;
 use reject::{Reason, Rejection};
@@ -27,6 +26,7 @@ use sha2::{Digest as _, Sha256};
 use std::net::SocketAddr;
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 pub const APNS_ROUTE: &str = "/relay/v1/apns/{app_id}/{environment}/{device_token}";
@@ -80,7 +80,7 @@ impl AppState {
     }
 }
 
-pub async fn run(cfg: RelayConfig) -> anyhow::Result<()> {
+pub async fn run(cfg: RelayConfig, shutdown: CancellationToken) -> anyhow::Result<()> {
     let state = Arc::new(AppState::try_new(cfg)?);
     let addr = state.cfg.bind_addr;
     let serving = serve(addr, router(Arc::clone(&state))).await?;
@@ -95,7 +95,7 @@ pub async fn run(cfg: RelayConfig) -> anyhow::Result<()> {
         "push relay listening"
     );
 
-    wait_for_shutdown().await;
+    shutdown.cancelled().await;
     state.sidecar.set_serving(false);
     serving.stop().await;
     Ok(())
@@ -313,7 +313,6 @@ async fn forward(
     body: Body,
     bytes: &mut usize,
 ) -> Result<(), Rejection> {
-    let _permit = state.quota.admit()?;
     let target = resolve(state, incoming)?;
     if !device_token_is_shaped(incoming.leg, &incoming.device_token) {
         return Err(Rejection::new(Reason::DeviceTokenInvalid));
@@ -322,9 +321,17 @@ async fn forward(
         return Err(Rejection::new(Reason::BadRequest));
     }
     let delivery = Delivery::parse(header(headers, URGENCY_HEADER), header(headers, TTL_HEADER))?;
+    let lowered;
+    let quota_token: &str = match incoming.leg {
+        RelayLeg::Apns | RelayLeg::ApnsVoip => {
+            lowered = incoming.device_token.to_ascii_lowercase();
+            &lowered
+        }
+        RelayLeg::Fcm => &incoming.device_token,
+    };
     state.quota.take(
         &state.metrics,
-        &incoming.device_token,
+        quota_token,
         match incoming.leg {
             RelayLeg::ApnsVoip => Urgency::Alert,
             _ => delivery.urgency,
@@ -344,6 +351,7 @@ async fn forward(
     if body.is_empty() {
         return Err(Rejection::new(Reason::BadRequest));
     }
+    let _permit = state.quota.admit()?;
     let payload = envelope::encode_payload(&body);
 
     match target {

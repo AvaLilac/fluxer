@@ -66,6 +66,7 @@ export class GuildMember {
 			? new Date(guildMember.communication_disabled_until).getTime()
 			: null;
 		return (
+			this.joinedAt.getTime() === new Date(guildMember.joined_at).getTime() &&
 			this.nick === (guildMember.nick ?? null) &&
 			this.avatar === (guildMember.avatar ?? null) &&
 			this.banner === (guildMember.banner ?? null) &&
@@ -88,7 +89,7 @@ export class GuildMember {
 		return (this.profileFlags & GuildMemberProfileFlags.BANNER_UNSET) !== 0;
 	}
 
-	getSortedRoles(): ReadonlyArray<GuildRole> {
+	getDisplayRoles(): ReadonlyArray<GuildRole> {
 		const guild = Guilds.getGuild(this.guildId);
 		if (!guild) {
 			return [];
@@ -105,11 +106,11 @@ export class GuildMember {
 	}
 
 	getIconRole(): GuildRole | undefined {
-		return this.getSortedRoles().find((role) => role.icon !== null || role.unicodeEmoji !== null);
+		return this.getDisplayRoles().find((role) => role.icon !== null || role.unicodeEmoji !== null);
 	}
 
 	getColorString(): string | undefined {
-		const sortedRoles = this.getSortedRoles();
+		const sortedRoles = this.getDisplayRoles();
 		for (const role of sortedRoles) {
 			if (role.color) {
 				return ColorUtils.int2rgb(role.color);

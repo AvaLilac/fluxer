@@ -21,6 +21,7 @@ import * as RouterUtils from '@app/features/navigation/utils/RouterUtils';
 import {useLocation} from '@app/features/platform/components/router/RouterReact';
 import {Button} from '@app/features/ui/button/Button';
 import {isMobileExperienceEnabled} from '@app/features/ui/utils/MobileExperience';
+import {getFormattingLocale} from '@app/features/user/utils/LocaleUtils';
 import {getDateFormatter} from '@fluxer/date_utils/src/DateFormatterCache';
 import type {EnforcementNotice, NetworkBlock} from '@fluxer/schema/src/domains/auth/EnforcementNoticeSchemas';
 import {msg} from '@lingui/core/macro';
@@ -171,10 +172,18 @@ function LineText({line}: {line: string}) {
 	return parts;
 }
 
-function Lines({lines, className = styles.text}: {lines: ReadonlyArray<string>; className?: string}) {
+function Lines({
+	lines,
+	className = styles.text,
+	links = true,
+}: {
+	lines: ReadonlyArray<string>;
+	className?: string;
+	links?: boolean;
+}) {
 	return lines.map((line) => (
 		<p key={line} className={className} data-flx="auth.flow.account-restriction-screen.lines.text">
-			<LineText line={line} data-flx="auth.flow.account-restriction-screen.lines.line-text" />
+			{links ? <LineText line={line} data-flx="auth.flow.account-restriction-screen.lines.line-text" /> : line}
 		</p>
 	));
 }
@@ -243,7 +252,11 @@ function NoticeView({
 					{notice.rule == null ? null : (
 						<RuleLine rule={notice.rule} data-flx="auth.flow.account-restriction-screen.notice-view.rule-line" />
 					)}
-					<Lines lines={notice.facts} data-flx="auth.flow.account-restriction-screen.notice-view.lines--2" />
+					<Lines
+						lines={notice.facts}
+						links={false}
+						data-flx="auth.flow.account-restriction-screen.notice-view.lines--2"
+					/>
 					{notice.statement == null ? null : (
 						<p className={styles.text} data-flx="auth.flow.account-restriction-screen.notice.statement">
 							{i18n._(NOTE_FROM_OUR_TEAM_DESCRIPTOR, {statement: notice.statement})}
@@ -302,7 +315,7 @@ export function NetworkBlockDetails({block}: {block: NetworkBlock}) {
 			{expiresAt == null ? null : (
 				<p className={styles.text} data-flx="auth.flow.account-restriction-screen.network-block-details.ends">
 					{i18n._(NETWORK_BLOCK_ENDS_DESCRIPTOR, {
-						date: `${getDateFormatter(i18n.locale, {dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC'}).format(new Date(expiresAt))} UTC`,
+						date: `${getDateFormatter(getFormattingLocale(), {dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC'}).format(new Date(expiresAt))} UTC`,
 					})}
 				</p>
 			)}

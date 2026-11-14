@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type {APIConfig, BlueskyOAuthConfig, OperatorPassConfig, TrustedCallerConfig} from '@app/api/config/APIConfig';
+import {availableParallelism} from 'node:os';
+import type {
+	AgePolicyConfig,
+	APIConfig,
+	BlueskyOAuthConfig,
+	OperatorPassConfig,
+	TrustedCallerConfig,
+} from '@app/api/config/APIConfig';
 import {
 	parseOperatorPassMaxQuantity,
 	parseOperatorPassReleaseLists,
 	parseOperatorPassStandardPrices,
-	parseOperatorPassStoppedCountries,
-	parseOperatorPassTransferLockHours,
 	parseOperatorPassWallTiers,
 	parseOperatorPassWithdrawalCountries,
 	resolveOperatorPassDisabledCurrencies,
@@ -16,10 +21,12 @@ import {OperatorPassRateLimitConfigs} from '@app/api/rate_limit_configs/Operator
 import {parseIpBanEntry} from '@app/api/utils/IpRangeUtils';
 import {trimTrailingSlash} from '@app/api/utils/UrlUtils';
 import type {WorkerTaskName} from '@app/api/worker/WorkerLaneConfig';
+import {parseUploadsTtlMs} from '@fluxer/config/src/ConfigLoader';
 import type {MasterConfig} from '@fluxer/config/src/MasterConfig';
 import {EmailDeliveryModes} from '@fluxer/constants/src/AccountConfigConstants';
 import {smtpTlsModeFromSecure} from '@fluxer/constants/src/SmtpConstants';
 import {parseIpAddress} from '@fluxer/ip_utils/src/IpAddress';
+import type {GeoEntry} from '@fluxer/schema/src/domains/geolocation/GeolocationSchemas';
 import {normalizeString} from '@fluxer/schema/src/primitives/SchemaPrimitives';
 import {parseGeoipSourceConfig, resolveGeoipRuntimeSourceConfig} from '@pkgs/geoip/src/GeoipStartup';
 
@@ -166,6 +173,26 @@ function buildTrustedCallers(master: MasterConfig): Array<TrustedCallerConfig> {
 	return trustedCallers;
 }
 
+const HOSTED_AGE_RESTRICTED_REGIONS = ['GB', 'BR'];
+
+function toGeoEntry(region: string): GeoEntry {
+	const separator = region.indexOf('-');
+	if (separator === -1) {
+		return {countryCode: region, regionCode: null};
+	}
+	return {countryCode: region.slice(0, separator), regionCode: region.slice(separator + 1)};
+}
+
+function buildAgePolicyConfig(master: MasterConfig): AgePolicyConfig {
+	const {enabled, restricted_regions} = master.instance.age_policy;
+	const regionsSet = restricted_regions !== undefined;
+	if (!(enabled ?? (regionsSet || !master.instance.self_hosted))) {
+		return {restricted: []};
+	}
+	const restricted = regionsSet ? restricted_regions : HOSTED_AGE_RESTRICTED_REGIONS;
+	return {restricted: restricted.map(toGeoEntry)};
+}
+
 const SETUP_TOKEN_MIN_LENGTH = 32;
 const SETUP_TOKEN_MAX_LENGTH = 256;
 
@@ -226,18 +253,9 @@ function resolveOperatorPassClockOffsetMs(master: MasterConfig): number {
 
 function buildOperatorPassConfig(master: MasterConfig): OperatorPassConfig {
 	const source = master.operator_pass;
-	const saleOpensAt = parseOptionalIsoInstant(source.sale_opens_at, 'FLUXER_OPERATOR_PASS_SALE_OPENS_AT');
 	const priceRisesAt = parseOptionalIsoInstant(source.price_rises_at, 'FLUXER_OPERATOR_PASS_PRICE_RISES_AT');
-	if ((saleOpensAt === null) !== (priceRisesAt === null)) {
-		throw new Error('FLUXER_OPERATOR_PASS_SALE_OPENS_AT and FLUXER_OPERATOR_PASS_PRICE_RISES_AT must be set together');
-	}
-	if (saleOpensAt && priceRisesAt && priceRisesAt.getTime() <= saleOpensAt.getTime()) {
-		throw new Error('FLUXER_OPERATOR_PASS_PRICE_RISES_AT must be later than FLUXER_OPERATOR_PASS_SALE_OPENS_AT');
-	}
-	if (saleOpensAt === null && master.env === 'production' && !master.instance.self_hosted) {
-		console.warn(
-			'FLUXER_OPERATOR_PASS_SALE_OPENS_AT and FLUXER_OPERATOR_PASS_PRICE_RISES_AT are not set, the Operator Pass sale stays closed',
-		);
+	if (priceRisesAt === null && master.env === 'production' && !master.instance.self_hosted) {
+		console.warn('FLUXER_OPERATOR_PASS_PRICE_RISES_AT is not set, the Operator Pass early bird price never ends');
 	}
 	const graceMinutes = source.grace_minutes;
 	if (
@@ -255,31 +273,59 @@ function buildOperatorPassConfig(master: MasterConfig): OperatorPassConfig {
 	if ((labsGuildId === null) !== (labsOperatorRoleId === null)) {
 		throw new Error('FLUXER_LABS_GUILD_ID and FLUXER_LABS_OPERATOR_ROLE_ID must be set together');
 	}
+	const labsVisionaryRoleId = parseOptionalSnowflake(source.labs_visionary_role_id, 'FLUXER_LABS_VISIONARY_ROLE_ID');
+	if (labsVisionaryRoleId !== null && labsGuildId === null) {
+		throw new Error('FLUXER_LABS_VISIONARY_ROLE_ID needs FLUXER_LABS_GUILD_ID');
+	}
+	const labsOperatorsChannelId = parseOptionalSnowflake(
+		source.labs_operators_channel_id,
+		'FLUXER_LABS_OPERATORS_CHANNEL_ID',
+	);
+	if (labsOperatorsChannelId !== null && labsGuildId === null) {
+		throw new Error('FLUXER_LABS_OPERATORS_CHANNEL_ID needs FLUXER_LABS_GUILD_ID');
+	}
 	const standardPricesMinor = parseOperatorPassStandardPrices(source.standard_prices_minor);
-	if (standardPricesMinor === null && master.env === 'production' && !master.instance.self_hosted) {
-		console.warn(
-			'FLUXER_OPERATOR_PASS_STANDARD_PRICE_* is not set, Operator Pass checkout keeps the early bird price after the price rise',
+	const hostedSale = priceRisesAt !== null && master.env === 'production' && !master.instance.self_hosted;
+	if (hostedSale && standardPricesMinor === null) {
+		throw new Error(
+			'FLUXER_OPERATOR_PASS_STANDARD_PRICE_* must be set in production when FLUXER_OPERATOR_PASS_PRICE_RISES_AT is set',
+		);
+	}
+	if (hostedSale && (labsGuildId === null || labsVisionaryRoleId === null || labsOperatorsChannelId === null)) {
+		throw new Error(
+			'FLUXER_LABS_GUILD_ID, FLUXER_LABS_OPERATOR_ROLE_ID, FLUXER_LABS_VISIONARY_ROLE_ID and FLUXER_LABS_OPERATORS_CHANNEL_ID must be set in production when FLUXER_OPERATOR_PASS_PRICE_RISES_AT is set',
 		);
 	}
 	return {
-		saleOpensAt,
 		priceRisesAt,
 		graceMs: graceMinutes * 60 * 1000,
 		clockOffsetMs: resolveOperatorPassClockOffsetMs(master),
 		labsGuildId,
 		labsOperatorRoleId,
+		labsVisionaryRoleId,
+		labsOperatorsChannelId,
 		standardPricesMinor,
 		releaseLists: parseOperatorPassReleaseLists(source.release_lists),
-		transferLockMs: parseOperatorPassTransferLockHours(source.transfer_lock_hours) * 60 * 60 * 1000,
 		withdrawalCountries: parseOperatorPassWithdrawalCountries(source.withdrawal_countries),
-		stoppedCountries: parseOperatorPassStoppedCountries(source.stopped_countries),
 		wallTierMinimums: parseOperatorPassWallTiers(source.wall_tiers),
 		maxQuantity: parseOperatorPassMaxQuantity(source.max_quantity),
-		disabledCurrencies: resolveOperatorPassDisabledCurrencies(
-			source.localized_prices_enabled,
-			parseOperatorPassStoppedCountries(source.stopped_countries),
-		),
+		disabledCurrencies: resolveOperatorPassDisabledCurrencies(source.localized_prices_enabled),
 	};
+}
+
+const VALKEY_DEFAULT_MAXMEMORY_BYTES = 192 * 1024 * 1024;
+const KV_POSTGRES_ROW_OVERHEAD_FACTOR = 4;
+
+function defaultKVPostgresMaxConnections(embeddedWorker: boolean): number {
+	return Math.min(25, Math.max(4, (embeddedWorker ? 3 : 2) * availableParallelism()));
+}
+
+function buildStorageConfig(master: MasterConfig): APIConfig['storage'] {
+	const {backend, root, uploads_ttl, read_only} = master.storage;
+	if (backend === 's3') {
+		return {backend, root: '', uploadsTtlMs: null, readOnly: read_only};
+	}
+	return {backend, root, uploadsTtlMs: parseUploadsTtlMs(uploads_ttl), readOnly: read_only};
 }
 
 export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
@@ -290,6 +336,7 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 	const postgresSource = master.database.postgres;
 	const apiWorkerConfig = master.services.api?.worker;
 	const s3Config = master.s3;
+	const storage = buildStorageConfig(master);
 	const geoipSourceConfig = resolveGeoipRuntimeSourceConfig(parseGeoipSourceConfig(master.geoip.maxmind_db_path), {
 		serviceName: 'api',
 	});
@@ -320,9 +367,11 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 	return {
 		nodeEnv: master.env === 'test' ? 'development' : master.env,
 		port: master.services.api.port,
+		host: master.services.api.host,
 		headersTimeoutMs: master.services.api.headers_timeout_ms,
 		requestTimeoutMs: master.services.api.request_timeout_ms,
 		maxInflightRequests: master.services.api.max_inflight_requests,
+		maxConcurrentFormUploads: master.services.api.max_concurrent_form_uploads,
 		automatedMessageDeletionDelayDays: master.services.api.automated_message_deletion_delay_days,
 		ipBanExemptIps: normalizeIpBanExemptIps(master.services.api.ip_ban_exempt_ips),
 		cassandra: {
@@ -352,12 +401,18 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 		kv: {
 			url: master.internal.kv,
 			mode: master.internal.kv_mode,
+			postgresMaxConnections:
+				master.internal.kv_postgres?.max_connections ??
+				defaultKVPostgresMaxConnections(apiWorkerConfig?.embedded ?? false),
+			postgresMaxBytes:
+				master.internal.kv_postgres?.max_bytes ?? VALKEY_DEFAULT_MAXMEMORY_BYTES * KV_POSTGRES_ROW_OVERHEAD_FACTOR,
 		},
 		nats: {
 			coreUrl: master.services.nats?.core_url ?? 'nats://127.0.0.1:4222',
 			jetStreamUrl: master.services.nats?.jetstream_url ?? 'nats://127.0.0.1:4223',
 			authToken: master.services.nats?.auth_token ?? '',
 		},
+		storage,
 		storageChangeFeed: {
 			enabled: master.services.api.storage_change_feed?.enabled ?? false,
 			stream: master.services.api.storage_change_feed?.stream ?? 'STORAGE_CHANGES',
@@ -396,6 +451,7 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 		endpoints: {
 			apiPublic: master.endpoints.api,
 			apiPublicDiscovery: master.services.api.discovery_public_endpoint || master.endpoints.api,
+			apiTransportDiscovery: master.services.api.discovery_transport_endpoint || null,
 			apiClient: master.endpoints.api_client,
 			webApp: master.endpoints.app,
 			webAppOrigins: [...new Set([new URL(master.endpoints.app).origin, ...master.services.api.app_origin_aliases])],
@@ -430,6 +486,7 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 			fromEmail: master.integrations.email.from_email,
 			fromName: master.integrations.email.from_name,
 			replyToEmail: master.integrations.email.reply_to_email,
+			supportAlertEmail: master.integrations.email.support_alert_email?.trim() || null,
 			appBaseUrl: resolveEmailAppBaseUrl(master),
 			smtp: master.integrations.email.smtp ? toSmtpConfig(master.integrations.email.smtp) : undefined,
 			fallback: master.integrations.email.fallback
@@ -460,6 +517,8 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 			turnServers: master.integrations.voice.turn_servers ?? [],
 			joinAllowPrivateEndpoints: master.integrations.voice.join_allow_private_endpoints ?? false,
 			healthIntervalMs: master.integrations.voice.health_interval_ms ?? 15000,
+			participantSweepEnabled: master.integrations.voice.participant_sweep_enabled ?? true,
+			participantSweepDryRun: master.integrations.voice.participant_sweep_dry_run ?? true,
 		},
 		stripe: {
 			enabled: master.integrations.stripe.enabled,
@@ -532,6 +591,10 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 		},
 		admin: {
 			oauthClientSecret: master.services.admin.oauth_client_secret,
+			sso: {
+				issuer: master.services.admin.sso.issuer,
+				clientId: master.services.admin.sso.client_id,
+			},
 		},
 		auth: {
 			sudoModeSecret: master.auth.sudo_mode_secret,
@@ -576,6 +639,7 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 			},
 			accountIdentity: master.instance.account_identity,
 			tagStyle: master.instance.tag_style,
+			agePolicy: buildAgePolicyConfig(master),
 		},
 		discovery: {
 			enabled: master.discovery.enabled,
@@ -596,7 +660,8 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 			validateResponses: resolveValidateResponses(master),
 		},
 		presignedAttachmentUploadsEnabled: master.services.api.presigned_attachment_uploads_enabled ?? false,
-		presignedHarvestDownloadsEnabled: master.services.api.presigned_harvest_downloads_enabled ?? true,
+		presignedHarvestDownloadsEnabled:
+			storage.backend === 's3' && (master.services.api.presigned_harvest_downloads_enabled ?? true),
 		attachmentDecayEnabled: master.attachment_decay_enabled,
 		deletionGracePeriodHours: master.dev.test_mode_enabled ? 0.01 : master.deletion_grace_period_hours,
 		inactivityDeletionThresholdDays: master.inactivity_deletion_threshold_days,
@@ -635,6 +700,7 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 		storeBilling: {
 			sandboxUserIds: master.integrations.store_billing.sandbox_user_ids ?? [],
 			sandboxEntitlesAll: master.integrations.store_billing.sandbox_entitles_all,
+			sandboxSubscriptions: master.integrations.store_billing.sandbox_subscriptions,
 		},
 		worker: {
 			mode: apiWorkerConfig?.mode ?? 'all_lanes',
@@ -656,6 +722,7 @@ export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
 
 interface APIServerOptions {
 	port: number;
+	hostname?: string;
 	headersTimeoutMs: number;
 	requestTimeoutMs: number;
 }
@@ -663,6 +730,7 @@ interface APIServerOptions {
 export function buildAPIServerOptions(config: APIConfig): APIServerOptions {
 	return {
 		port: config.port,
+		hostname: config.host,
 		headersTimeoutMs: config.headersTimeoutMs,
 		requestTimeoutMs: config.requestTimeoutMs,
 	};

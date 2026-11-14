@@ -171,6 +171,7 @@ export const AttachmentGridItem: FC<AttachmentGridItemProps> = observer(
 		const {ref: visibilityRef, isNearViewport} = useNearViewport<HTMLDivElement>({rememberKey: thumbnailSrc});
 		const shouldLoadMedia = isNearViewport && !shouldBlur && !spoilerHidden;
 		const {
+			src: displaySrc,
 			loaded,
 			error,
 			thumbHashURL,
@@ -389,8 +390,8 @@ export const AttachmentGridItem: FC<AttachmentGridItemProps> = observer(
 								data-flx="channel.embeds.attachments.attachment-grid-item.media-container"
 							>
 								<div
-									className={styles.loadingOverlay}
-									data-flx="channel.embeds.attachments.attachment-grid-item.loading-overlay"
+									className={styles.mediaFrame}
+									data-flx="channel.embeds.attachments.attachment-grid-item.media-frame"
 								>
 									{isAnimatedGif && (
 										<div
@@ -401,7 +402,7 @@ export const AttachmentGridItem: FC<AttachmentGridItemProps> = observer(
 										</div>
 									)}
 									<img
-										src={shouldLoadMedia ? thumbnailSrc : undefined}
+										src={shouldLoadMedia ? displaySrc : undefined}
 										ref={mediaRef}
 										alt={attachment.filename}
 										loading="eager"

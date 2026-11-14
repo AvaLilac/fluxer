@@ -4,14 +4,17 @@ import {showGenericErrorModal} from '@app/features/app/components/alerts/Generic
 import * as Modal from '@app/features/app/components/dialogs/Modal';
 import {
 	CANCEL_DESCRIPTOR,
+	MEDIA_NEEDS_HTTPS_DESCRIPTOR,
 	PAUSE_DESCRIPTOR,
 	SOMETHING_WENT_WRONG_DESCRIPTOR,
 } from '@app/features/i18n/utils/CommonMessageDescriptors';
 import {getCachedNumberFormat} from '@app/features/i18n/utils/IntlCache';
 import {Logger} from '@app/features/platform/utils/AppLogger';
+import {isInsecureBrowserContext} from '@app/features/platform/utils/SecureContext';
 import {remFromPx} from '@app/features/theme/layout/RemFromPx';
 import {Button} from '@app/features/ui/button/Button';
 import * as ModalCommands from '@app/features/ui/commands/ModalCommands';
+import {getFormattingLocale} from '@app/features/user/utils/LocaleUtils';
 import {AudioWaveform, computePeaks} from '@app/features/voice/components/AudioWaveform';
 import {LiveRecordingWaveform} from '@app/features/voice/components/LiveRecordingWaveform';
 import styles from '@app/features/voice/components/VoiceMessageComposerModal.module.css';
@@ -40,7 +43,7 @@ const COMPOSER_TITLE_DESCRIPTOR = msg({
 	comment: 'Title of the desktop voice message composer modal.',
 });
 const RECORDING_HINT_DESCRIPTOR = msg({
-	message: 'Speak now. Press Stop when you are done — you can trim afterwards.',
+	message: 'Speak now. Press Stop when you are done, and you can trim the recording afterwards.',
 	comment: 'Help text shown while recording a voice message on desktop.',
 });
 const REVIEW_HINT_DESCRIPTOR = msg({
@@ -272,7 +275,9 @@ const VoiceMessageComposerModal: React.FC<VoiceMessageComposerModalProps> = obse
 		const mimeType = pickRecorderMime();
 		if (!mimeType || typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
 			setStage('permission_error');
-			setErrorMessage(i18n._(RECORDING_NOT_SUPPORTED_DESCRIPTOR));
+			setErrorMessage(
+				i18n._(isInsecureBrowserContext() ? MEDIA_NEEDS_HTTPS_DESCRIPTOR : RECORDING_NOT_SUPPORTED_DESCRIPTOR),
+			);
 			return;
 		}
 		try {
@@ -419,7 +424,7 @@ const VoiceMessageComposerModal: React.FC<VoiceMessageComposerModalProps> = obse
 
 	const formatSeconds = useCallback(
 		(value: number) =>
-			getCachedNumberFormat(i18n.locale, {
+			getCachedNumberFormat(getFormattingLocale(), {
 				style: 'unit',
 				unit: 'second',
 				unitDisplay: 'narrow',
@@ -486,7 +491,9 @@ const VoiceMessageComposerModal: React.FC<VoiceMessageComposerModalProps> = obse
 		if (selectionDuration < MIN_DURATION_SECONDS) {
 			setErrorMessage(
 				i18n._(TOO_SHORT_DESCRIPTOR, {
-					seconds: getCachedNumberFormat(i18n.locale, {maximumFractionDigits: 1}).format(MIN_DURATION_SECONDS),
+					seconds: getCachedNumberFormat(getFormattingLocale(), {maximumFractionDigits: 1}).format(
+						MIN_DURATION_SECONDS,
+					),
 				}),
 			);
 			return;

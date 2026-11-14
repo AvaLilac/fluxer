@@ -26,7 +26,7 @@ import {
 } from '@fluxer/instance_bootstrap/src/Discovery';
 import {InstanceEndpointKind, normalizeInstanceEndpoint} from '@fluxer/instance_bootstrap/src/EndpointNormalization';
 import {CanonicalNetworkProtocol} from '@fluxer/instance_bootstrap/src/NetworkOrigin';
-import {normalizeThemeColor} from '@fluxer/instance_bootstrap/src/ThemeColor';
+import {normalizeHexColor, normalizeThemeColor} from '@fluxer/instance_bootstrap/src/ThemeColor';
 import {
 	AGE_POLICY_ACTIONS,
 	type InstanceAgePolicy,
@@ -34,6 +34,7 @@ import {
 	type InstanceAppPublic,
 	type InstanceBuiltInGuildBadgeImages,
 	type InstanceCommunity,
+	type InstanceConnectionProvider,
 	type InstanceDomainMigration,
 	type InstanceFeatures,
 	type InstanceGuildBadge,
@@ -284,6 +285,7 @@ function readFeatures(value: unknown): InstanceFeatures {
 		'email_codes',
 		'date_of_birth_step',
 		'discovery_enabled',
+		'proxy_attachments_through_api',
 	] as const) {
 		const value = readOptionalBoolean(source, key, `features.${key}`);
 		if (value !== undefined) {
@@ -391,7 +393,23 @@ function readServices(value: unknown): InstanceServices {
 		gif_enabled: readBoolean(source, 'gif_enabled', 'services.gif_enabled'),
 		youtube_enabled: readBoolean(source, 'youtube_enabled', 'services.youtube_enabled'),
 		bluesky_enabled: readBoolean(source, 'bluesky_enabled', 'services.bluesky_enabled'),
+		connection_providers: readConnectionProviders(source['connection_providers']),
 	};
+}
+
+function readConnectionProviders(value: unknown): Array<InstanceConnectionProvider> {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	return value.map((entry, index) => {
+		const path = `services.connection_providers.${index}`;
+		const source = readRecord(entry, path);
+		return {
+			id: readNonEmptyString(source, 'id', `${path}.id`),
+			name: readNonEmptyString(source, 'name', `${path}.name`),
+			icon_url: readNullableAbsoluteHttpUrl(source, 'icon_url', `${path}.icon_url`),
+		};
+	});
 }
 
 function readLimitFilter(value: unknown, path: string): LimitFilter {
@@ -497,6 +515,35 @@ function readAppPublic(value: unknown): InstanceAppPublic {
 				: null,
 			sign_in_backdrop_url: Object.hasOwn(branding, 'sign_in_backdrop_url')
 				? readNullableAbsoluteHttpUrl(branding, 'sign_in_backdrop_url', 'appPublic.branding.sign_in_backdrop_url')
+				: null,
+			premium_page_color: normalizeHexColor(branding.premium_page_color),
+			premium_showcase_expressions_url: Object.hasOwn(branding, 'premium_showcase_expressions_url')
+				? readNullableAbsoluteHttpUrl(
+						branding,
+						'premium_showcase_expressions_url',
+						'appPublic.branding.premium_showcase_expressions_url',
+					)
+				: null,
+			premium_showcase_profile_url: Object.hasOwn(branding, 'premium_showcase_profile_url')
+				? readNullableAbsoluteHttpUrl(
+						branding,
+						'premium_showcase_profile_url',
+						'appPublic.branding.premium_showcase_profile_url',
+					)
+				: null,
+			premium_showcase_stream_url: Object.hasOwn(branding, 'premium_showcase_stream_url')
+				? readNullableAbsoluteHttpUrl(
+						branding,
+						'premium_showcase_stream_url',
+						'appPublic.branding.premium_showcase_stream_url',
+					)
+				: null,
+			premium_showcase_upload_url: Object.hasOwn(branding, 'premium_showcase_upload_url')
+				? readNullableAbsoluteHttpUrl(
+						branding,
+						'premium_showcase_upload_url',
+						'appPublic.branding.premium_showcase_upload_url',
+					)
 				: null,
 			custom_css: readOptionalText(branding, 'custom_css'),
 			upload_limit_message: readOptionalText(branding, 'upload_limit_message'),

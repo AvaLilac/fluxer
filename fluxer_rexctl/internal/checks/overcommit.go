@@ -6,13 +6,14 @@ import (
 	"context"
 
 	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/host"
+	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/settings"
+	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/stack"
 	"github.com/fluxerapp/fluxer/fluxer_rexctl/internal/voice"
 )
 
 var (
-	overcommit       = host.Overcommit
-	enableOvercommit = host.EnableOvercommit
-	freeMemory       = host.FreeMemory
+	overcommit = host.Overcommit
+	freeMemory = host.FreeMemory
 )
 
 const (
@@ -23,10 +24,13 @@ const (
 const overcommitOff = "Memory overcommit is off, so Fluxer's cache can fail to save data when memory runs low."
 
 func init() {
-	Register(Check{ID: "memory-overcommit", Phases: Preinstall | Installed, Run: runOvercommit, Fix: fixOvercommit, SafeFix: true})
+	Register(Check{ID: "memory-overcommit", Phases: Preinstall | Installed, Run: runOvercommit, Fix: fixOvercommit})
 }
 
 func runOvercommit(_ context.Context, e *Env) Result {
+	if e.chosen(settings.KVMode) == settings.KVPostgres || e.value(stack.KVModeVar) == settings.KVPostgres {
+		return skip("")
+	}
 	state := overcommit()
 	if (state == host.OvercommitOff || state == host.OvercommitLocked) && enoughForValkey(e) {
 		return pass("Memory overcommit is off, and this machine has enough free memory for Fluxer's cache to save its data.")
@@ -35,17 +39,17 @@ func runOvercommit(_ context.Context, e *Env) Result {
 	case host.OvercommitUnknown:
 		return skip("")
 	case host.OvercommitLocked:
-		return warn(overcommitOff, "This machine is a container and can't change it. Run this on the container host: "+host.OvercommitCommand)
+		return warn(overcommitOff, "This machine is a container and can't change it. Run this on the container host: "+host.OvercommitSysctl.HostCommand())
 	case host.OvercommitOff:
 		r := fixable(warn(overcommitOff, "Run rexctl doctor --fix to turn it on."))
-		r.Manual = "Run this as an administrator, or on the container host if this machine is a container: " + host.OvercommitCommand
+		r.Manual = "Run this as an administrator, or on the container host if this machine is a container: " + host.OvercommitSysctl.HostCommand()
 		return r
 	}
 	return pass("Memory overcommit is on.")
 }
 
-func fixOvercommit(ctx context.Context, _ *Env) error {
-	return enableOvercommit(ctx)
+func fixOvercommit(ctx context.Context, e *Env) error {
+	return e.run(ctx, host.OvercommitSysctl.Steps()...)
 }
 
 func enoughForValkey(e *Env) bool {

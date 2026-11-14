@@ -3,6 +3,7 @@
 package settings
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"net"
@@ -16,6 +17,9 @@ import (
 )
 
 func Effective(set *stack.Set, chosen, secrets, adminImport map[string]string) (map[string]string, error) {
+	if err := CheckCombination(chosen); err != nil {
+		return nil, err
+	}
 	env := map[string]string{}
 	reads := func(v string) bool { return slices.Contains(set.Vars, v) }
 	put := func(v, value string) {
@@ -30,10 +34,17 @@ func Effective(set *stack.Set, chosen, secrets, adminImport map[string]string) (
 			fixed[name] = value
 		}
 	}
+	if mode := chosen[KVMode]; mode != "" {
+		fixed[stack.KVModeVar] = mode
+	}
 	if len(set.Profiles) > 0 {
 		for v, value := range stack.Sizing(Hardware(), chosen[MemoryProfile] == "", fixed) {
 			put(v, value)
 		}
+	}
+
+	for v, value := range stack.DiskSizing(chosen[DiskProfile], fixed) {
+		put(v, value)
 	}
 
 	if name := chosen[MemoryProfile]; name != "" {
@@ -74,6 +85,13 @@ func Effective(set *stack.Set, chosen, secrets, adminImport map[string]string) (
 		if isRawName(name) {
 			env[name] = value
 			operator[name] = true
+		}
+	}
+	if listen := chosen[EdgeListen]; listen != "" && !reads(EdgeListenVar) && cmp.Or(chosen[EdgeMode], EdgeBundled) == EdgeBundled {
+		for v, port := range edgePortVars {
+			if reads(v) {
+				env[v] = net.JoinHostPort(listen, cmp.Or(env[v], port))
+			}
 		}
 	}
 
@@ -132,16 +150,19 @@ func derived(chosen map[string]string) map[string]string {
 	if mode == "" {
 		mode = EdgeBundled
 	}
-	port := "443"
-	if mode == EdgeBundled && chosen[EdgeHTTPSPort] != "" {
-		port = chosen[EdgeHTTPSPort]
-	}
-	out["FLUXER_PUBLIC_SCHEME"] = "https"
-	out["FLUXER_PUBLIC_PORT"] = port
 	scheme := "https"
 	if raw := strings.ToLower(strings.TrimSpace(chosen["FLUXER_PUBLIC_SCHEME"])); raw != "" {
 		scheme = raw
 	}
+	port, listenPort := "443", EdgeHTTPSPort
+	if scheme == "http" {
+		port, listenPort = "80", EdgeHTTPPort
+	}
+	if mode == EdgeBundled && chosen[listenPort] != "" {
+		port = chosen[listenPort]
+	}
+	out["FLUXER_PUBLIC_SCHEME"] = scheme
+	out["FLUXER_PUBLIC_PORT"] = port
 	if raw := strings.TrimSpace(chosen[EdgePublicPort]); raw != "" {
 		port = raw
 	}
@@ -152,7 +173,7 @@ func derived(chosen map[string]string) map[string]string {
 		}
 		out["FLUXER_PUBLIC_ORIGIN"] = origin
 		if mode == EdgeBundled {
-			out["FLUXER_EDGE_SITE_ADDRESS"] = "https://" + domain
+			out["FLUXER_EDGE_SITE_ADDRESS"] = scheme + "://" + domain
 		}
 	}
 	return out

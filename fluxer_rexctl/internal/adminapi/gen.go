@@ -178,7 +178,6 @@ const (
 	MessageDeleteAll              AdminAclType = "message:delete_all"
 	MessageLookup                 AdminAclType = "message:lookup"
 	MessageShred                  AdminAclType = "message:shred"
-	OperatorPassWaitlistStats     AdminAclType = "operator_pass:waitlist_stats"
 	RegistrationReview            AdminAclType = "registration:review"
 	ReportDelete                  AdminAclType = "report:delete"
 	ReportResolve                 AdminAclType = "report:resolve"
@@ -379,8 +378,6 @@ func (e AdminAclType) Valid() bool {
 		return true
 	case MessageShred:
 		return true
-	case OperatorPassWaitlistStats:
-		return true
 	case RegistrationReview:
 		return true
 	case ReportDelete:
@@ -488,13 +485,17 @@ func (e BillingCatalogModeSchema) Valid() bool {
 
 // Defines values for BrandingAssetUploadRequestKind.
 const (
-	Favicon        BrandingAssetUploadRequestKind = "favicon"
-	FaviconDark    BrandingAssetUploadRequestKind = "favicon_dark"
-	Icon           BrandingAssetUploadRequestKind = "icon"
-	Logo           BrandingAssetUploadRequestKind = "logo"
-	SignInBackdrop BrandingAssetUploadRequestKind = "sign_in_backdrop"
-	Symbol         BrandingAssetUploadRequestKind = "symbol"
-	Wordmark       BrandingAssetUploadRequestKind = "wordmark"
+	Favicon                    BrandingAssetUploadRequestKind = "favicon"
+	FaviconDark                BrandingAssetUploadRequestKind = "favicon_dark"
+	Icon                       BrandingAssetUploadRequestKind = "icon"
+	Logo                       BrandingAssetUploadRequestKind = "logo"
+	PremiumShowcaseExpressions BrandingAssetUploadRequestKind = "premium_showcase_expressions"
+	PremiumShowcaseProfile     BrandingAssetUploadRequestKind = "premium_showcase_profile"
+	PremiumShowcaseStream      BrandingAssetUploadRequestKind = "premium_showcase_stream"
+	PremiumShowcaseUpload      BrandingAssetUploadRequestKind = "premium_showcase_upload"
+	SignInBackdrop             BrandingAssetUploadRequestKind = "sign_in_backdrop"
+	Symbol                     BrandingAssetUploadRequestKind = "symbol"
+	Wordmark                   BrandingAssetUploadRequestKind = "wordmark"
 )
 
 // Valid indicates whether the value is a known member of the BrandingAssetUploadRequestKind enum.
@@ -507,6 +508,14 @@ func (e BrandingAssetUploadRequestKind) Valid() bool {
 	case Icon:
 		return true
 	case Logo:
+		return true
+	case PremiumShowcaseExpressions:
+		return true
+	case PremiumShowcaseProfile:
+		return true
+	case PremiumShowcaseStream:
+		return true
+	case PremiumShowcaseUpload:
 		return true
 	case SignInBackdrop:
 		return true
@@ -549,6 +558,42 @@ func (e CleanupModeSchema) Valid() bool {
 	case CleanupModeSchemaAFTERINACTIVITY:
 		return true
 	case CleanupModeSchemaOFF:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConnectionProviderConfigResponseKind.
+const (
+	ConnectionProviderConfigResponseKindOAUTH2 ConnectionProviderConfigResponseKind = "oauth2"
+	ConnectionProviderConfigResponseKindOIDC   ConnectionProviderConfigResponseKind = "oidc"
+)
+
+// Valid indicates whether the value is a known member of the ConnectionProviderConfigResponseKind enum.
+func (e ConnectionProviderConfigResponseKind) Valid() bool {
+	switch e {
+	case ConnectionProviderConfigResponseKindOAUTH2:
+		return true
+	case ConnectionProviderConfigResponseKindOIDC:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConnectionProviderUpdateKind.
+const (
+	ConnectionProviderUpdateKindOAUTH2 ConnectionProviderUpdateKind = "oauth2"
+	ConnectionProviderUpdateKindOIDC   ConnectionProviderUpdateKind = "oidc"
+)
+
+// Valid indicates whether the value is a known member of the ConnectionProviderUpdateKind enum.
+func (e ConnectionProviderUpdateKind) Valid() bool {
+	switch e {
+	case ConnectionProviderUpdateKindOAUTH2:
+		return true
+	case ConnectionProviderUpdateKindOIDC:
 		return true
 	default:
 		return false
@@ -702,6 +747,24 @@ func (e DeletionReasonCode) Valid() bool {
 	case DeletionReasonCodeUSERREQUESTED:
 		return true
 	case DeletionReasonCodeVIOLENTEXTREMISM:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DistributionProductSchema.
+const (
+	PlutoniumGift         DistributionProductSchema = "plutonium_gift"
+	PlutoniumSubscription DistributionProductSchema = "plutonium_subscription"
+)
+
+// Valid indicates whether the value is a known member of the DistributionProductSchema enum.
+func (e DistributionProductSchema) Valid() bool {
+	switch e {
+	case PlutoniumGift:
+		return true
+	case PlutoniumSubscription:
 		return true
 	default:
 		return false
@@ -1241,11 +1304,12 @@ func (e InstanceRegistrationModeSchema) Valid() bool {
 
 // Defines values for InstantAccountAvailabilitySchema.
 const (
-	APPROVALREQUIRED   InstantAccountAvailabilitySchema = "approval_required"
-	AVAILABLE          InstantAccountAvailabilitySchema = "available"
-	CAPTCHAOFF         InstantAccountAvailabilitySchema = "captcha_off"
-	DISABLED           InstantAccountAvailabilitySchema = "disabled"
-	REGISTRATIONCLOSED InstantAccountAvailabilitySchema = "registration_closed"
+	APPROVALREQUIRED       InstantAccountAvailabilitySchema = "approval_required"
+	AVAILABLE              InstantAccountAvailabilitySchema = "available"
+	CAPTCHAOFF             InstantAccountAvailabilitySchema = "captcha_off"
+	DISABLED               InstantAccountAvailabilitySchema = "disabled"
+	EMAILDOMAINSRESTRICTED InstantAccountAvailabilitySchema = "email_domains_restricted"
+	REGISTRATIONCLOSED     InstantAccountAvailabilitySchema = "registration_closed"
 )
 
 // Valid indicates whether the value is a known member of the InstantAccountAvailabilitySchema enum.
@@ -1258,6 +1322,8 @@ func (e InstantAccountAvailabilitySchema) Valid() bool {
 	case CAPTCHAOFF:
 		return true
 	case DISABLED:
+		return true
+	case EMAILDOMAINSRESTRICTED:
 		return true
 	case REGISTRATIONCLOSED:
 		return true
@@ -1606,6 +1672,9 @@ type AdminProfileBadgeResponse struct {
 	// Label Full badge description, localized for the viewer. Use it as the tooltip, and as alt text when there is no caption
 	Label string `json:"label"`
 
+	// Quote The quote from the holder's Operators' wall listing, plain text to show in straight double quotes after the other tooltip lines and never parse as markup. Absent while the wall does not show it
+	Quote *string `json:"quote,omitempty"`
+
 	// SmallAsset Image hash drawn for 20 pixels and smaller, served like asset. Use it instead of asset at those sizes. Absent when asset reads well small
 	SmallAsset *HexString16Type `json:"small_asset,omitempty"`
 
@@ -1765,6 +1834,88 @@ type CaptchaProviderSchema string
 
 // CleanupModeSchema Whether a cleanup policy deletes accounts
 type CleanupModeSchema string
+
+// ConnectionProviderConfigResponse defines model for ConnectionProviderConfigResponse.
+type ConnectionProviderConfigResponse struct {
+	AuthorizationUrl *string `json:"authorization_url"`
+
+	// CallbackUrl Redirect URL to register at the provider
+	CallbackUrl     string                   `json:"callback_url"`
+	ClientId        string                   `json:"client_id"`
+	ClientSecretSet bool                     `json:"client_secret_set"`
+	Enabled         bool                     `json:"enabled"`
+	IconUrl         *string                  `json:"icon_url"`
+	Id              ConnectionProviderIdType `json:"id"`
+
+	// IdPath oauth2 path to the account id in the user object
+	IdPath *string `json:"id_path"`
+
+	// Issuer Issuer URL, required for oidc
+	Issuer *string `json:"issuer"`
+
+	// Kind How Fluxer signs in to a connection provider
+	Kind ConnectionProviderConfigResponseKind `json:"kind"`
+
+	// Name Name shown to people
+	Name string `json:"name"`
+
+	// NameClaim oidc claim with the account name, preferred_username when null
+	NameClaim *string `json:"name_claim"`
+
+	// NamePath oauth2 path to the account name in the user object
+	NamePath *string `json:"name_path"`
+
+	// ProfileUrlTemplate HTTPS link to the account with {id} and {name} placeholders after the host
+	ProfileUrlTemplate *string `json:"profile_url_template"`
+
+	// Scope Space-separated scopes. OpenID Connect providers need openid
+	Scope       string  `json:"scope"`
+	TokenUrl    *string `json:"token_url"`
+	UserinfoUrl *string `json:"userinfo_url"`
+}
+
+// ConnectionProviderConfigResponseKind How Fluxer signs in to a connection provider
+type ConnectionProviderConfigResponseKind string
+
+// ConnectionProviderIdType Connection provider id: lowercase letters, digits, hyphens and underscores, up to 32 characters
+type ConnectionProviderIdType = string
+
+// ConnectionProviderUpdate defines model for ConnectionProviderUpdate.
+type ConnectionProviderUpdate struct {
+	AuthorizationUrl *string `json:"authorization_url,omitempty"`
+	ClientId         string  `json:"client_id"`
+
+	// ClientSecret Leave out to keep the saved secret of the provider with the same id
+	ClientSecret *string                  `json:"client_secret,omitempty"`
+	Enabled      bool                     `json:"enabled"`
+	IconUrl      *string                  `json:"icon_url,omitempty"`
+	Id           ConnectionProviderIdType `json:"id"`
+
+	// IdPath Dot path into the JSON user object, for example data.0.login
+	IdPath *string `json:"id_path,omitempty"`
+	Issuer *string `json:"issuer,omitempty"`
+
+	// Kind How Fluxer signs in to a connection provider
+	Kind ConnectionProviderUpdateKind `json:"kind"`
+
+	// Name Name shown to people
+	Name string `json:"name"`
+
+	// NameClaim Dot path into the JSON user object, for example data.0.login
+	NameClaim *string `json:"name_claim,omitempty"`
+
+	// NamePath Dot path into the JSON user object, for example data.0.login
+	NamePath           *string `json:"name_path,omitempty"`
+	ProfileUrlTemplate *string `json:"profile_url_template,omitempty"`
+
+	// Scope Space-separated scopes. OpenID Connect providers need openid
+	Scope       string  `json:"scope"`
+	TokenUrl    *string `json:"token_url,omitempty"`
+	UserinfoUrl *string `json:"userinfo_url,omitempty"`
+}
+
+// ConnectionProviderUpdateKind How Fluxer signs in to a connection provider
+type ConnectionProviderUpdateKind string
 
 // CreateRegistrationUrlRequest defines model for CreateRegistrationUrlRequest.
 type CreateRegistrationUrlRequest struct {
@@ -1983,6 +2134,68 @@ type DeleteVoiceResponse struct {
 
 // DeletionReasonCode Reason the account was scheduled for deletion
 type DeletionReasonCode int32
+
+// DistributionChannelPriceSchema defines model for DistributionChannelPriceSchema.
+type DistributionChannelPriceSchema struct {
+	// BaseUnitAmount Unit amount of the base price, in minor units
+	BaseUnitAmount int `json:"base_unit_amount"`
+
+	// PriceId Stripe price ID charged through the distribution
+	PriceId string `json:"price_id"`
+
+	// RateBps Share of the channel price that goes to the distribution, in basis points. 500 means 5%
+	RateBps int `json:"rate_bps"`
+
+	// UnitAmount Unit amount of the channel price, in minor units
+	UnitAmount int `json:"unit_amount"`
+}
+
+// DistributionPricingConfigResponse defines model for DistributionPricingConfigResponse.
+type DistributionPricingConfigResponse struct {
+	Rules []DistributionRuleSchema `json:"rules"`
+}
+
+// DistributionPricingUpdateRequest defines model for DistributionPricingUpdateRequest.
+type DistributionPricingUpdateRequest struct {
+	// Rules Full list of distribution rules. A left-out rule that already has channel prices stays stored as inactive so its subscriptions keep renewing
+	Rules []struct {
+		// Active Whether checkouts and quotes for this distribution use the channel price
+		Active bool `json:"active"`
+
+		// Id Distribution id sent by clients built for that distribution, for example ios_marketplace
+		Id string `json:"id"`
+
+		// Products Products that get the channel price
+		Products []DistributionProductSchema `json:"products"`
+
+		// RateBps Share of the channel price that goes to the distribution, in basis points. 500 means 5%
+		RateBps int `json:"rate_bps"`
+	} `json:"rules"`
+}
+
+// DistributionProductSchema defines model for DistributionProductSchema.
+type DistributionProductSchema string
+
+// DistributionRuleSchema defines model for DistributionRuleSchema.
+type DistributionRuleSchema struct {
+	// Active Whether checkouts and quotes for this distribution use the channel price
+	Active bool `json:"active"`
+
+	// Id Distribution id sent by clients built for that distribution, for example ios_marketplace
+	Id string `json:"id"`
+
+	// Prices Channel Stripe prices keyed by "<rule_version>:<base price ID>". Managed by the server and never removed
+	Prices map[string]DistributionChannelPriceSchema `json:"prices"`
+
+	// Products Products that get the channel price
+	Products []DistributionProductSchema `json:"products"`
+
+	// RateBps Share of the channel price that goes to the distribution, in basis points. 500 means 5%
+	RateBps int `json:"rate_bps"`
+
+	// RuleVersion Bumped by the server whenever rate_bps changes. Prices made under a version keep it
+	RuleVersion int `json:"rule_version"`
+}
 
 // DomainMigrationConfigResponse defines model for DomainMigrationConfigResponse.
 type DomainMigrationConfigResponse struct {
@@ -2239,22 +2452,27 @@ type InstanceConfigResponse struct {
 	Accounts  AccountsConfigSchema `json:"accounts"`
 	AppPublic struct {
 		Branding struct {
-			CustomCss                    *string  `json:"custom_css"`
-			FaviconDarkUrl               *string  `json:"favicon_dark_url"`
-			FaviconUrl                   *string  `json:"favicon_url"`
-			IconUrl                      *string  `json:"icon_url"`
-			LogoUrl                      *string  `json:"logo_url"`
-			PremiumInfoUrl               *string  `json:"premium_info_url"`
-			PremiumProductName           string   `json:"premium_product_name"`
-			ProductName                  string   `json:"product_name"`
-			SignInBackdropUrl            *string  `json:"sign_in_backdrop_url"`
-			StatusPageIncidentHistoryUrl *string  `json:"status_page_incident_history_url"`
-			StatusPageUrl                *string  `json:"status_page_url"`
-			SymbolUrl                    *string  `json:"symbol_url"`
-			ThemeColor                   *string  `json:"theme_color"`
-			TrustedDomains               []string `json:"trusted_domains"`
-			UploadLimitMessage           *string  `json:"upload_limit_message"`
-			WordmarkUrl                  *string  `json:"wordmark_url"`
+			CustomCss                     *string  `json:"custom_css"`
+			FaviconDarkUrl                *string  `json:"favicon_dark_url"`
+			FaviconUrl                    *string  `json:"favicon_url"`
+			IconUrl                       *string  `json:"icon_url"`
+			LogoUrl                       *string  `json:"logo_url"`
+			PremiumInfoUrl                *string  `json:"premium_info_url"`
+			PremiumPageColor              *string  `json:"premium_page_color"`
+			PremiumProductName            string   `json:"premium_product_name"`
+			PremiumShowcaseExpressionsUrl *string  `json:"premium_showcase_expressions_url"`
+			PremiumShowcaseProfileUrl     *string  `json:"premium_showcase_profile_url"`
+			PremiumShowcaseStreamUrl      *string  `json:"premium_showcase_stream_url"`
+			PremiumShowcaseUploadUrl      *string  `json:"premium_showcase_upload_url"`
+			ProductName                   string   `json:"product_name"`
+			SignInBackdropUrl             *string  `json:"sign_in_backdrop_url"`
+			StatusPageIncidentHistoryUrl  *string  `json:"status_page_incident_history_url"`
+			StatusPageUrl                 *string  `json:"status_page_url"`
+			SymbolUrl                     *string  `json:"symbol_url"`
+			ThemeColor                    *string  `json:"theme_color"`
+			TrustedDomains                []string `json:"trusted_domains"`
+			UploadLimitMessage            *string  `json:"upload_limit_message"`
+			WordmarkUrl                   *string  `json:"wordmark_url"`
 		} `json:"branding"`
 		Legal struct {
 			GuidelinesUrl *string `json:"guidelines_url"`
@@ -2282,13 +2500,14 @@ type InstanceConfigResponse struct {
 			PowEscalationPerHour int `json:"pow_escalation_per_hour"`
 		} `json:"instant_accounts"`
 	} `json:"auth"`
-	Billing            InstanceBillingResponse          `json:"billing"`
-	Captcha            CaptchaConfigResponse            `json:"captcha"`
-	DomainMigration    DomainMigrationConfigResponse    `json:"domain_migration"`
-	ExperimentDelivery ExperimentDeliveryConfigResponse `json:"experiment_delivery"`
-	GatewayRollout     GatewayRolloutConfigResponse     `json:"gateway_rollout"`
-	GuildVisits        GuildVisitsConfigResponse        `json:"guild_visits"`
-	Integrations       struct {
+	Billing             InstanceBillingResponse           `json:"billing"`
+	Captcha             CaptchaConfigResponse             `json:"captcha"`
+	DistributionPricing DistributionPricingConfigResponse `json:"distribution_pricing"`
+	DomainMigration     DomainMigrationConfigResponse     `json:"domain_migration"`
+	ExperimentDelivery  ExperimentDeliveryConfigResponse  `json:"experiment_delivery"`
+	GatewayRollout      GatewayRolloutConfigResponse      `json:"gateway_rollout"`
+	GuildVisits         GuildVisitsConfigResponse         `json:"guild_visits"`
+	Integrations        struct {
 		Bluesky struct {
 			ClientName       *string `json:"client_name"`
 			ClientUri        *string `json:"client_uri"`
@@ -2299,7 +2518,10 @@ type InstanceConfigResponse struct {
 			PolicyUri        *string `json:"policy_uri"`
 			TosUri           *string `json:"tos_uri"`
 		} `json:"bluesky"`
-		Email struct {
+
+		// ConnectionProviders Profile connection providers. Always empty outside self-hosted instances
+		ConnectionProviders []ConnectionProviderConfigResponse `json:"connection_providers"`
+		Email               struct {
 			// Delivery Saved delivery mode, or null to use the environment
 			Delivery                           *EmailDeliveryModeSchema `json:"delivery"`
 			DeliveryState                      EmailDeliveryStateSchema `json:"delivery_state"`
@@ -2364,6 +2586,7 @@ type InstanceConfigResponse struct {
 			RenewThresholdDays *int     `json:"renew_threshold_days"`
 			RenewWindowDays    *int     `json:"renew_window_days"`
 		} `json:"attachment_decay"`
+		ProxyAttachmentsThroughApi bool `json:"proxy_attachments_through_api"`
 	} `json:"media"`
 
 	// Notice Notice shown to everyone on the instance, or null
@@ -2486,6 +2709,7 @@ type InstanceConfigUpdateRequest struct {
 			IconUrl                      *string   `json:"icon_url,omitempty"`
 			LogoUrl                      *string   `json:"logo_url,omitempty"`
 			PremiumInfoUrl               *string   `json:"premium_info_url,omitempty"`
+			PremiumPageColor             *string   `json:"premium_page_color,omitempty"`
 			PremiumProductName           *string   `json:"premium_product_name,omitempty"`
 			ProductName                  *string   `json:"product_name,omitempty"`
 			SignInBackdropUrl            *string   `json:"sign_in_backdrop_url,omitempty"`
@@ -2510,14 +2734,15 @@ type InstanceConfigUpdateRequest struct {
 			Configured *bool `json:"configured,omitempty"`
 		} `json:"setup,omitempty"`
 	} `json:"app_public,omitempty"`
-	Auth               *AuthConfigUpdateRequest               `json:"auth,omitempty"`
-	Billing            *InstanceBillingUpdateRequest          `json:"billing,omitempty"`
-	Captcha            *CaptchaConfigUpdateRequest            `json:"captcha,omitempty"`
-	DomainMigration    *DomainMigrationConfigUpdateRequest    `json:"domain_migration,omitempty"`
-	ExperimentDelivery *ExperimentDeliveryConfigUpdateRequest `json:"experiment_delivery,omitempty"`
-	GatewayRollout     *GatewayRolloutConfigUpdateRequest     `json:"gateway_rollout,omitempty"`
-	GuildVisits        *GuildVisitsConfigUpdateRequest        `json:"guild_visits,omitempty"`
-	Integrations       *struct {
+	Auth                *AuthConfigUpdateRequest               `json:"auth,omitempty"`
+	Billing             *InstanceBillingUpdateRequest          `json:"billing,omitempty"`
+	Captcha             *CaptchaConfigUpdateRequest            `json:"captcha,omitempty"`
+	DistributionPricing *DistributionPricingUpdateRequest      `json:"distribution_pricing,omitempty"`
+	DomainMigration     *DomainMigrationConfigUpdateRequest    `json:"domain_migration,omitempty"`
+	ExperimentDelivery  *ExperimentDeliveryConfigUpdateRequest `json:"experiment_delivery,omitempty"`
+	GatewayRollout      *GatewayRolloutConfigUpdateRequest     `json:"gateway_rollout,omitempty"`
+	GuildVisits         *GuildVisitsConfigUpdateRequest        `json:"guild_visits,omitempty"`
+	Integrations        *struct {
 		Bluesky *struct {
 			ClientName *string `json:"client_name,omitempty"`
 			ClientUri  *string `json:"client_uri,omitempty"`
@@ -2530,7 +2755,10 @@ type InstanceConfigUpdateRequest struct {
 			PolicyUri *string `json:"policy_uri,omitempty"`
 			TosUri    *string `json:"tos_uri,omitempty"`
 		} `json:"bluesky,omitempty"`
-		Email *struct {
+
+		// ConnectionProviders Replaces the whole provider list. Only self-hosted instances can have providers
+		ConnectionProviders *[]ConnectionProviderUpdate `json:"connection_providers,omitempty"`
+		Email               *struct {
 			// Delivery How the instance sends email, or null to use the environment
 			Delivery                  *EmailDeliveryModeSchema `json:"delivery,omitempty"`
 			DisableNewIpAuthorization *bool                    `json:"disable_new_ip_authorization,omitempty"`
@@ -2574,6 +2802,9 @@ type InstanceConfigUpdateRequest struct {
 			RenewThresholdDays *int     `json:"renew_threshold_days,omitempty"`
 			RenewWindowDays    *int     `json:"renew_window_days,omitempty"`
 		} `json:"attachment_decay,omitempty"`
+
+		// ProxyAttachmentsThroughApi Whether attachment links point at the API, which checks that the viewer can read the message before it hands over the file
+		ProxyAttachmentsThroughApi *bool `json:"proxy_attachments_through_api,omitempty"`
 	} `json:"media,omitempty"`
 
 	// Notice Notice shown to everyone on the instance, such as planned maintenance

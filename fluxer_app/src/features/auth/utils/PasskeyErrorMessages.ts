@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import {FEATURE_NEEDS_HTTPS_DESCRIPTOR} from '@app/features/i18n/utils/CommonMessageDescriptors';
+import {isInsecureBrowserContext} from '@app/features/platform/utils/SecureContext';
 import type {I18n} from '@lingui/core';
 import {msg} from '@lingui/core/macro';
 
@@ -16,6 +18,12 @@ const PASSKEY_NOT_ALLOWED_DESCRIPTOR = msg({
 const PASSKEY_ALREADY_REGISTERED_DESCRIPTOR = msg({
 	message: 'This device or security key already has a passkey for your account.',
 	comment: 'Error shown when adding a passkey with an authenticator that already holds one for this account.',
+});
+const PASSKEY_NO_AUTHENTICATOR_DESCRIPTOR = msg({
+	message:
+		"Fluxer couldn't find a security key on this computer. Connect your security key and try again, or open Fluxer in your web browser and use your passkey there.",
+	comment:
+		'Error shown in the desktop app when a passkey prompt starts but no security key is connected to the computer.',
 });
 const PASSKEY_DOMAIN_MISMATCH_DESCRIPTOR = msg({
 	message:
@@ -57,7 +65,7 @@ export function describePasskeyPromptEnded(i18n: I18n): string {
 
 export function describePasskeyError(i18n: I18n, error: unknown, rpId: string | null): string | null {
 	if (error instanceof PasskeysUnsupportedError) {
-		return i18n._(PASSKEYS_UNAVAILABLE_DESCRIPTOR);
+		return i18n._(isInsecureBrowserContext() ? FEATURE_NEEDS_HTTPS_DESCRIPTOR : PASSKEYS_UNAVAILABLE_DESCRIPTOR);
 	}
 	if (!(error instanceof Error)) {
 		return null;
@@ -69,6 +77,8 @@ export function describePasskeyError(i18n: I18n, error: unknown, rpId: string | 
 			return withErrorName(describePasskeyPromptEnded(i18n), error.name);
 		case 'InvalidStateError':
 			return withErrorName(i18n._(PASSKEY_ALREADY_REGISTERED_DESCRIPTOR), error.name);
+		case 'NoAuthenticatorError':
+			return withErrorName(i18n._(PASSKEY_NO_AUTHENTICATOR_DESCRIPTOR), error.name);
 		case 'SecurityError':
 			return withErrorName(
 				rpId !== null && (code === null || DOMAIN_ERROR_CODES.has(code))

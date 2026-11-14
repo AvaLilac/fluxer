@@ -25,9 +25,9 @@ import {ACCESS_TOKEN_TTL_SECONDS} from '@app/api/oauth/OAuth2TokenConstants';
 import type {ApplicationRepository} from '@app/api/oauth/repositories/ApplicationRepository';
 import type {OAuth2TokenRepository} from '@app/api/oauth/repositories/OAuth2TokenRepository';
 import {parseClientCredentials} from '@app/api/oauth/utils/ParseClientCredentials';
+import {assertAccountNotLimited} from '@app/api/user/AccountLimit';
 import {isSignInRefused} from '@app/api/user/UserHelpers';
 import {mapUserToOAuthResponse, mapUserToPartialResponse} from '@app/api/user/UserMappers';
-import {verifyPassword} from '@app/api/utils/PasswordUtils';
 import {canAuthorizeBotInvite, normalizeBotInvitePermissions} from '@fluxer/constants/src/BotPermissionUtils';
 import {ALL_PERMISSIONS} from '@fluxer/constants/src/ChannelConstants';
 import {JoinSourceTypes} from '@fluxer/constants/src/GuildConstants';
@@ -181,11 +181,8 @@ export class OAuth2RequestService {
 		if (!application) {
 			throw new InvalidClientError();
 		}
-		if (application.clientSecretHash) {
-			const valid = await verifyPassword({password: secret, passwordHash: application.clientSecretHash});
-			if (!valid) {
-				throw new InvalidClientError();
-			}
+		if (!(await this.oauth2Service.clientSecretMatches(application, secret))) {
+			throw new InvalidClientError();
 		}
 		return this.oauth2Service.introspect(params.form.token, applicationId);
 	}
@@ -205,6 +202,9 @@ export class OAuth2RequestService {
 		const channelId = params.body.channel_id ? createChannelID(params.body.channel_id) : null;
 		if (guildId && channelId) {
 			throw InputValidationError.create('channel_id', 'channel_id cannot be used with guild_id');
+		}
+		if (scopeSet.has('bot') && (guildId || channelId)) {
+			assertAccountNotLimited(await this.apiContext.services.users.findUniqueAssert(params.userId));
 		}
 		const botPermissionMask = guildId ? THREAD_AWARE_ALL_PERMISSIONS : ALL_PERMISSIONS;
 		let requestedPermissions: bigint | null = null;
@@ -327,7 +327,10 @@ export class OAuth2RequestService {
 				}
 			} catch (err) {
 				if (authCode) {
-					await this.oauth2TokenRepository.deleteAuthorizationCode(authCode);
+					await this.oauth2TokenRepository.consumeAuthorizationCode(
+						authCode,
+						createApplicationID(BigInt(params.body.client_id)),
+					);
 				}
 				throw err;
 			}
@@ -396,15 +399,16 @@ export class OAuth2RequestService {
 			scopes.push('bot');
 		}
 		const isOwner = requestingUserId !== undefined && requestingUserId === application.ownerUserId;
+		const bot = botUser ? mapBotProfileToResponse(botUser) : null;
 		return {
 			id: application.applicationId.toString(),
 			name: application.name,
-			icon: botUser?.avatarHash ?? null,
+			icon: bot?.avatar ?? null,
 			description: null,
 			redirect_uris: Array.from(application.oauth2RedirectUris),
 			scopes,
 			bot_public: application.botIsPublic || isOwner,
-			bot: botUser ? mapBotProfileToResponse(botUser) : null,
+			bot,
 			current_user: requestingUser ? mapUserToPartialResponse(requestingUser) : null,
 		};
 	}
@@ -528,7 +532,7 @@ export class OAuth2RequestService {
 							application: {
 								id: application.applicationId.toString(),
 								name: application.name,
-								icon: botUser?.avatarHash ?? null,
+								icon: botUser ? mapUserToPartialResponse(botUser).avatar : null,
 								description: null,
 								bot_public: application.botIsPublic,
 							},
