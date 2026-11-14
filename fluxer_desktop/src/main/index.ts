@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import fs from 'node:fs';
@@ -172,7 +173,7 @@ log.info('Configured user data storage', {
 
 cleanupLinuxChromiumSpellcheckDictionaries(userDataConfig.base);
 
-const MAIN_DIR = path.dirname(fileURLToPath(import.meta.url));
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const AVIA_PLUGINS: string[] = [
 	'RefreshTitlebarButton.js',
@@ -185,27 +186,18 @@ const AVIA_PLUGINS: string[] = [
 	'AviaPluginThemeRepo.js',
 ];
 
-function loadAviaInject(window: Electron.BrowserWindow): void {
-	window.webContents.on('dom-ready', async () => {
-		log.info('[AviaInject] dom-ready fired, injecting plugins');
-		try {
-			for (const plugin of AVIA_PLUGINS) {
-				const pluginPath: string = path.join(MAIN_DIR, 'plugins', plugin);
-				log.info(`[AviaInject] loading ${pluginPath}`);
-				const pluginCode: string = fs.readFileSync(pluginPath, 'utf8');
-				await window.webContents.executeJavaScript(pluginCode, true);
-				log.info(`[AviaInject] injected ${plugin}`);
-			}
-		} catch (error) {
-			log.error('[AviaInject] plugin injection failed:', error);
+async function loadAviaInject(window: Electron.BrowserWindow): Promise<void> {
+	try {
+		for (const plugin of AVIA_PLUGINS) {
+			const pluginPath: string = path.join(__dirname, 'plugins', plugin);
+			log.info(`[AviaInject] loading ${pluginPath}`);
+			const pluginCode: string = fs.readFileSync(pluginPath, 'utf8');
+			await window.webContents.executeJavaScript(pluginCode, true);
+			log.info(`[AviaInject] injected ${plugin}`);
 		}
-	});
-}
-
-function createAviaWindow() {
-	const window = createWindow();
-	loadAviaInject(window);
-	return window;
+	} catch (error) {
+		log.error('[AviaInject] plugin injection failed:', error);
+	}
 }
 
 function exitCli(code: number): void {
@@ -491,12 +483,12 @@ export function initializeMainWindowStartup(): void {
 	ipcMain.on(DESKTOP_LAST_ROUTE_CHANNEL, (_event, routePath: unknown) => {
 		recordDesktopLastRoute(app.getPath('userData'), routePath);
 	});
-	setMainWindowFactory(() => createAviaWindow());
+	setMainWindowFactory(() => createWindow());
 	app.on('activate', () => {
 		if (hasQuitStarted()) return;
 		const mainWindow = getMainWindow();
 		if (mainWindow === null || mainWindow.isDestroyed()) {
-			if (!isStartupWindowPending()) createAviaWindow();
+			if (!isStartupWindowPending()) createWindow();
 		} else {
 			showWindow();
 		}
@@ -854,8 +846,14 @@ export async function finishMainAppStartup(): Promise<void> {
 	}
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	await new Promise<void>((resolve) => onMainWindowReady(resolve));
-	const launchNetLog = startLaunchNetLog();
 	stopStartupIfQuitting();
+
+	const mainWindow = getMainWindow();
+	if (mainWindow !== null && !mainWindow.isDestroyed()) {
+		await loadAviaInject(mainWindow);
+	}
+
+	const launchNetLog = startLaunchNetLog();
 	runStartupPhase('gateway-transport-warmup', warmGatewayTransport);
 	try {
 		runStartupPhase('linux-desktop-entry', ensureLinuxDesktopEntry);
@@ -879,7 +877,7 @@ export async function finishMainAppStartup(): Promise<void> {
 	}
 	runStartupPhase('desktop-tray', () => {
 		initializeDesktopTray({
-			createWindow: createAviaWindow,
+			createWindow,
 			getMainWindow,
 			hideWindow,
 			setQuitting,
