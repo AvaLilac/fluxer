@@ -4,7 +4,7 @@
     window.__AVIA_OFFICIAL_REPO_LOADED__ = true;
 
     const STORAGE_KEY = "avia_plugins";
-    const OFFICIAL_REPO_URL = "https://raw.githubusercontent.com/AvaLilac/FluxerPluginsRepo/refs/heads/main/PluginsRepo.js";
+    const OFFICIAL_REPO_URL = "https://raw.githubusercontent.com/AvaLilac/FluxerPluginsRepo/refs/heads/main/plugins.json";
     const THEMES_REGISTRY_URL = "https://raw.githubusercontent.com/AvaLilac/PluginRepo/refs/heads/main/themebackend/themerepobackend.js";
 
     const getPlugins = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
