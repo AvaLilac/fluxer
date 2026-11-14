@@ -189,6 +189,8 @@ const AVIA_PLUGINS: string[] = [
 async function loadAviaInject(window: Electron.BrowserWindow): Promise<void> {
 	try {
 		for (const plugin of AVIA_PLUGINS) {
+			if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+
 			const pluginPath: string = path.join(__dirname, 'plugins', plugin);
 			log.info(`[AviaInject] loading ${pluginPath}`);
 			const pluginCode: string = fs.readFileSync(pluginPath, 'utf8');
@@ -850,6 +852,10 @@ export async function finishMainAppStartup(): Promise<void> {
 
 	const mainWindow = getMainWindow();
 	if (mainWindow !== null && !mainWindow.isDestroyed()) {
+		mainWindow.webContents.on('did-finish-load', () => {
+			void loadAviaInject(mainWindow);
+		});
+
 		await loadAviaInject(mainWindow);
 	}
 
