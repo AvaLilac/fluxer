@@ -370,11 +370,11 @@ async function openEditorPanel(plugin, onSave) {
     });
 
     const saveBtn = document.createElement("button");
-    saveBtn.textContent = "💾 Save";
+    saveBtn.textContent = "Save";
     styleEditorBtn(saveBtn, "#2d6a4f");
 
     const saveRunBtn = document.createElement("button");
-    saveRunBtn.textContent = "▶ Save & Run";
+    saveRunBtn.textContent = "Save & Run";
     styleEditorBtn(saveRunBtn, "#1b4332");
 
     toolbar.appendChild(saveBtn);
@@ -398,13 +398,13 @@ async function openEditorPanel(plugin, onSave) {
     saveBtn.onclick = () => {
         onSave(editor.getValue(), false);
         saveBtn.textContent = "✓ Saved";
-        setTimeout(() => saveBtn.textContent = "💾 Save", 1200);
+        setTimeout(() => saveBtn.textContent = "Save", 1200);
     };
 
     saveRunBtn.onclick = () => {
         onSave(editor.getValue(), true);
         saveRunBtn.textContent = "✓ Ran!";
-        setTimeout(() => saveRunBtn.textContent = "▶ Save & Run", 1200);
+        setTimeout(() => saveRunBtn.textContent = "Save & Run", 1200);
     };
 
     enableEditorDrag(panel, header);
@@ -720,7 +720,7 @@ function renderLocalPanel(filter = "") {
         exportBtn.onclick = () => exportPlugin(plugin);
 
         const editBtn = document.createElement("button");
-        editBtn.textContent = "✏ Edit";
+        editBtn.textContent = "Edit";
         styleLocalBtn(editBtn, "rgba(100,140,255,0.2)");
         editBtn.style.flex = "1";
         editBtn.onclick = () => {
