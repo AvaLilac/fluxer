@@ -315,7 +315,7 @@
         importBtn.style.padding = "8px 12px";
 
         const newBtn = document.createElement("button");
-        newBtn.textContent = "+ New";
+        newBtn.textContent = "New";
         styleBtn(newBtn);
         newBtn.style.flex = "1";
         newBtn.style.padding = "8px 12px";
