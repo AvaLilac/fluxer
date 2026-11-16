@@ -261,6 +261,7 @@ jobs:
           ref: ${{ needs.meta.outputs.source_sha }}
           path: source
 
+
       - name: Temporarily disable macOS signing validation
         shell: bash
         run: |
@@ -276,33 +277,19 @@ jobs:
 
           source = path.read_text()
 
-          start = source.find("fn build_app_step(")
+          pattern = r'''let macos_keychain = if matches!\(platform, DesktopBuildPlatform::Macos\) \{\s*Some\(validate_macos_signing_env\(\)\?\)\s*\} else \{\s*None\s*\};'''
 
-          if start == -1:
-              sys.exit("Could not find build_app_step() in desktop.rs")
+          replacement = "let macos_keychain: Option<PathBuf> = None;"
 
-          end = source.find("\nfn ", start + 1)
-
-          if end == -1:
-              sys.exit("Could not find the end of build_app_step()")
-
-          function = source[start:end]
-
-          updated, count = re.subn(
-              r"(?m)^[ \t]*validate_macos_signing_env\(\)\?;[ \t]*\r?\n",
-              "",
-              function,
-              count=1
-          )
+          updated, count = re.subn(pattern, replacement, source, count=1)
 
           if count != 1:
-              sys.exit("Could not find the signing validation call inside build_app_step()")
+              sys.exit("Could not find the expected macOS keychain validation block. No changes made.")
 
-          source = source[:start] + updated + source[end:]
-          path.write_text(source)
+          path.write_text(updated)
 
-          print("Temporarily disabled macOS signing validation.")
-          print("The repository source has not been changed.")
+          print("Successfully disabled macOS signing keychain validation.")
+          print("Original retry and Electron build logic preserved.")
           PY
 
       - name: Set up Rust toolchain (CI helpers)
