@@ -489,7 +489,7 @@ function toggleLocalPanel() {
     nameInput.style.flex = "1";
 
     const addBtn = document.createElement("button");
-    addBtn.textContent = "+ New";
+    addBtn.textContent = "New";
     styleLocalBtn(addBtn);
     addBtn.onclick = () => {
         const name = nameInput.value.trim();
