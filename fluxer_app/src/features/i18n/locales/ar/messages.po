@@ -2277,6 +2277,11 @@ msgstr "{resultCount, plural, zero {# نتيجة متاحة} one {نتيجة و�
 msgid "{resultCount, plural, one {# result} other {# results}}"
 msgstr "{resultCount, plural, zero {# نتيجة} one {نتيجة واحدة} two {نتيجتان} few {# نتائج} many {# نتيجة} other {# نتيجة}}"
 
+#. OAuth authorize page error shown when the authorization link asks for a scope this app does not offer. Preserve {scope}, it is the technical scope name inserted by code.
+#: src/features/auth/components/pages/oauth_authorize_page/state/useAuthorizeFlow.ts
+msgid "{scope} is not a supported scope."
+msgstr ""
+
 #. AFK timeout label for a stored custom duration shown in the idle settings section.
 #. Generic duration label for a whole number of seconds.
 #: src/features/guild/components/modals/guild_tabs/guild_overview_tab/sections/IdleSettingsSection.tsx
@@ -3466,7 +3471,9 @@ msgstr "إضافة حساب"
 msgid "Add action."
 msgstr "إضافة إجراء."
 
+#. Button on the startup screen shown when the current account's instance is offline or not responding. Restarts the app signed out so the person can sign in to an account on any instance. The current account stays saved.
 #. Last tile in the account switcher grid, and the title of the step it opens, where another saved account is added by signing in or registering.
+#: src/features/app/components/BootstrapErrorScreen.tsx
 #: src/features/auth/components/accounts/account_switcher_modal/AccountSwitcherAuthFlow.tsx
 msgid "Add an account"
 msgstr "إضافة حساب"
