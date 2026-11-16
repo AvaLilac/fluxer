@@ -176,6 +176,7 @@ cleanupLinuxChromiumSpellcheckDictionaries(userDataConfig.base);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const AVIA_PLUGINS: string[] = [
+	'HideUpdaterIcon.js',
 	'RefreshTitlebarButton.js',
 	'menu.js',
 	'CategoryAPI.js',
