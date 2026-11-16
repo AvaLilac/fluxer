@@ -463,7 +463,7 @@
 
         searchInput = document.createElement("input");
         searchInput.className = "avia-repo-search";
-        searchInput.placeholder = "Search plugins or authors…";
+        searchInput.placeholder = "Search plugins or authors or descriptions…";
         searchInput.addEventListener("input", () => {
             renderRepo({ plugins: currentRepoData }, searchInput.value);
         });
