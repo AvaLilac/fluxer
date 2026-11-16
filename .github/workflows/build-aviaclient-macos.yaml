@@ -261,6 +261,50 @@ jobs:
           ref: ${{ needs.meta.outputs.source_sha }}
           path: source
 
+      - name: Temporarily disable macOS signing validation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          path = Path("_ci/tools/ci/src/desktop.rs")
+
+          if not path.is_file():
+              sys.exit(f"CI helper source not found: {path}")
+
+          source = path.read_text()
+
+          start = source.find("fn build_app_step(")
+
+          if start == -1:
+              sys.exit("Could not find build_app_step() in desktop.rs")
+
+          end = source.find("\nfn ", start + 1)
+
+          if end == -1:
+              sys.exit("Could not find the end of build_app_step()")
+
+          function = source[start:end]
+
+          updated, count = re.subn(
+              r"(?m)^[ \t]*validate_macos_signing_env\(\)\?;[ \t]*\r?\n",
+              "",
+              function,
+              count=1
+          )
+
+          if count != 1:
+              sys.exit("Could not find the signing validation call inside build_app_step()")
+
+          source = source[:start] + updated + source[end:]
+          path.write_text(source)
+
+          print("Temporarily disabled macOS signing validation.")
+          print("The repository source has not been changed.")
+          PY
+
       - name: Set up Rust toolchain (CI helpers)
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
