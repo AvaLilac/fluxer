@@ -65,7 +65,7 @@
         }
 
         .overlay {
-            position: fixed;
+            position: absolute;
             inset: 0;
             z-index: 100000;
             display: flex;
@@ -81,7 +81,7 @@
         .modal {
             width: 100%;
             max-width: 440px;
-            max-height: calc(100vh - 48px);
+            max-height: calc(100% - 48px);
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -417,11 +417,17 @@
     function showFontLoaderModal() {
         if (document.getElementById(FONT_MODAL_HOST_ID)) return;
 
+        const titlebar = document.querySelector('[data-flx="app.native-titlebar.titlebar"]') || document.querySelector("[data-native-titlebar]");
+        const titlebarHeight = titlebar?.getBoundingClientRect().height || 0;
+
         const host = document.createElement("div");
         host.id = FONT_MODAL_HOST_ID;
         Object.assign(host.style, {
             position: "fixed",
-            inset: "0",
+            top: `${titlebarHeight}px`,
+            right: "0",
+            bottom: "0",
+            left: "0",
             zIndex: "100000",
             pointerEvents: "none"
         });
