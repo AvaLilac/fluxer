@@ -159,7 +159,21 @@
         const icon = button.querySelector(ICON_SELECTOR) || button.querySelector("svg");
 
         if (icon) {
-            if (item.icon) {
+            if (item.svg) {
+                if (item.viewBox) {
+                    icon.setAttribute("viewBox", item.viewBox);
+                }
+
+                const path = icon.querySelector("path");
+
+                if (path) {
+                    path.setAttribute("d", item.svg);
+
+                    icon.querySelectorAll("path").forEach(extra => {
+                        if (extra !== path) extra.remove();
+                    });
+                }
+            } else if (item.icon) {
                 const filled = item.icon.endsWith("_fill");
 
                 let size = "1.25rem";
@@ -302,6 +316,14 @@
                     typeof item.icon === "string" && item.icon.trim()
                         ? item.icon.trim()
                         : null,
+                svg:
+                    typeof item.svg === "string" && item.svg.trim()
+                        ? item.svg.trim()
+                        : null,
+                viewBox:
+                    typeof item.viewBox === "string" && item.viewBox.trim()
+                        ? item.viewBox.trim()
+                        : null,
                 onClick: item.onClick
             });
 
@@ -330,6 +352,84 @@
             document
                 .querySelectorAll(`[data-avia-toolbar-id="${CSS.escape(id)}"]`)
                 .forEach(button => button.remove());
+        },
+
+        update(item) {
+            if (!item || typeof item.id !== "string") {
+                console.error(
+                    "[AviaToolbar] update: item.id must be a string, got",
+                    item && item.id
+                );
+                return;
+            }
+
+            const id = item.id.trim();
+
+            const registered = toolbarRegisteredItems.find(
+                i => i.id === id
+            );
+
+            if (!registered) {
+                console.error(
+                    "[AviaToolbar] update: id '%s' is not registered",
+                    id
+                );
+                return;
+            }
+
+            const hasName = "name" in item;
+            const hasIcon = "icon" in item;
+            const hasSvg = "svg" in item;
+            const hasViewBox = "viewBox" in item;
+
+            if (hasName && (typeof item.name !== "string" || !item.name.trim())) {
+                console.error(
+                    "[AviaToolbar] update: item.name must be a non-empty string, got",
+                    item.name
+                );
+                return;
+            }
+
+            if (hasName) {
+                registered.name = item.name;
+            }
+
+            if (hasIcon) {
+                registered.icon =
+                    typeof item.icon === "string" && item.icon.trim()
+                        ? item.icon.trim()
+                        : null;
+
+                if (registered.icon) {
+                    registered.svg = null;
+                }
+            }
+
+            if (hasSvg) {
+                registered.svg =
+                    typeof item.svg === "string" && item.svg.trim()
+                        ? item.svg.trim()
+                        : null;
+
+                if (registered.svg) {
+                    registered.icon = null;
+                }
+            }
+
+            if (hasViewBox) {
+                registered.viewBox =
+                    typeof item.viewBox === "string" && item.viewBox.trim()
+                        ? item.viewBox.trim()
+                        : null;
+            }
+
+            hideTooltip();
+
+            document
+                .querySelectorAll(`[data-avia-toolbar-id="${CSS.escape(id)}"]`)
+                .forEach(button => button.remove());
+
+            renderItems();
         }
     };
 
