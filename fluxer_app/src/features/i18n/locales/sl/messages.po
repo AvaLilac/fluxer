@@ -8231,10 +8231,6 @@ msgstr ""
 msgid "Check for updates..."
 msgstr ""
 
-#: src/features/app/components/BootstrapErrorScreen.tsx
-msgid "Check our <0>{BLUESKY_PROVIDER_NAME} ({FLUXER_BLUESKY_HANDLE})</0> for status updates."
-msgstr ""
-
 #. Description text in the share theme modal.
 #: src/features/theme/components/modals/ShareThemeModal.tsx
 msgid "Check out my custom theme!"
@@ -27897,6 +27893,11 @@ msgstr ""
 msgid "Play animated emojis"
 msgstr ""
 
+#. Short label for a toggle in the animation tab. Keep it concise.
+#: src/features/user/components/modals/tabs/accessibility_tab/AnimationTab.tsx
+msgid "Play GIFs in the GIF picker"
+msgstr ""
+
 #. Short label in the accessibility tab. Keep it concise.
 #: src/features/user/components/modals/tabs/AccessibilityTab.tsx
 msgid "Play sample"
@@ -43149,6 +43150,16 @@ msgstr ""
 msgid "When launched at login, start in the system tray instead of opening the window"
 msgstr ""
 
+#. Description for the GIF picker animation toggle in the animation tab on desktop.
+#: src/features/user/components/modals/tabs/accessibility_tab/AnimationTab.tsx
+msgid "When off, GIFs in the picker show a still frame until you hover over them."
+msgstr ""
+
+#. Description for the GIF picker animation toggle in the animation tab on mobile.
+#: src/features/user/components/modals/tabs/accessibility_tab/AnimationTab.tsx
+msgid "When off, GIFs in the picker show a still frame."
+msgstr ""
+
 #. Label in the display tab.
 #: src/features/user/components/modals/tabs/chat_settings_tab/DisplayTab.tsx
 msgid "When posted as links in chat"
@@ -43658,11 +43669,6 @@ msgstr ""
 
 #: src/features/user/components/modals/tabs/my_profile_tab/ProfileTypeSelector.tsx
 msgid "You are editing your per-community profile. This profile will only be visible in this community and will override your global profile."
-msgstr ""
-
-#. Body text in the settings dialog client info.
-#: src/features/app/components/dialogs/components/ClientInfo.tsx
-msgid "You are now a developer!"
 msgstr ""
 
 #. Modal body for the mobile checkout confirmation. Explains that the user is leaving the app to pay.

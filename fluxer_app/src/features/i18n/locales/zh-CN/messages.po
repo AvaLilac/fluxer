@@ -8238,10 +8238,6 @@ msgstr "检查更新"
 msgid "Check for updates..."
 msgstr "检查更新…"
 
-#: src/features/app/components/BootstrapErrorScreen.tsx
-msgid "Check our <0>{BLUESKY_PROVIDER_NAME} ({FLUXER_BLUESKY_HANDLE})</0> for status updates."
-msgstr "请查看我们的<0>{BLUESKY_PROVIDER_NAME} ({FLUXER_BLUESKY_HANDLE})</0>以获取状态更新。"
-
 #. Description text in the share theme modal.
 #: src/features/theme/components/modals/ShareThemeModal.tsx
 msgid "Check out my custom theme!"
@@ -27904,6 +27900,11 @@ msgstr "播放"
 msgid "Play animated emojis"
 msgstr "播放动态表情"
 
+#. Short label for a toggle in the animation tab. Keep it concise.
+#: src/features/user/components/modals/tabs/accessibility_tab/AnimationTab.tsx
+msgid "Play GIFs in the GIF picker"
+msgstr "在 GIF 选择器中播放 GIF"
+
 #. Short label in the accessibility tab. Keep it concise.
 #: src/features/user/components/modals/tabs/AccessibilityTab.tsx
 msgid "Play sample"
@@ -43156,6 +43157,16 @@ msgstr "登录时启动，在菜单栏中开始，而不是打开窗口"
 msgid "When launched at login, start in the system tray instead of opening the window"
 msgstr "登录时启动，在系统托盘中启动，而不是打开窗口"
 
+#. Description for the GIF picker animation toggle in the animation tab on desktop.
+#: src/features/user/components/modals/tabs/accessibility_tab/AnimationTab.tsx
+msgid "When off, GIFs in the picker show a still frame until you hover over them."
+msgstr "关闭后，选择器中的 GIF 会显示静态画面，直到你将鼠标悬停在上面。"
+
+#. Description for the GIF picker animation toggle in the animation tab on mobile.
+#: src/features/user/components/modals/tabs/accessibility_tab/AnimationTab.tsx
+msgid "When off, GIFs in the picker show a still frame."
+msgstr "关闭后，选择器中的 GIF 会显示静态画面。"
+
 #. Label in the display tab.
 #: src/features/user/components/modals/tabs/chat_settings_tab/DisplayTab.tsx
 msgid "When posted as links in chat"
@@ -43666,11 +43677,6 @@ msgstr "你已拒听"
 #: src/features/user/components/modals/tabs/my_profile_tab/ProfileTypeSelector.tsx
 msgid "You are editing your per-community profile. This profile will only be visible in this community and will override your global profile."
 msgstr "你正在编辑社区专属个人资料。此资料仅在此社区可见，并会覆盖你的全局个人资料。"
-
-#. Body text in the settings dialog client info.
-#: src/features/app/components/dialogs/components/ClientInfo.tsx
-msgid "You are now a developer!"
-msgstr "你现在是开发者了！"
 
 #. Modal body for the mobile checkout confirmation. Explains that the user is leaving the app to pay.
 #: src/features/app/components/dialogs/components/plutonium/hooks/useCheckoutActions.tsx
