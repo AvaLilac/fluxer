@@ -182,6 +182,7 @@ const AVIA_PLUGINS: string[] = [
 	'menu.js',
 	'CategoryAPI.js',
 	'ToolbarAPI.js',
+	'ActionMenuAPI.js',
 	'FontLoader.js',
 	'OnlinePlugins.js',
 	'localplugins.js',
