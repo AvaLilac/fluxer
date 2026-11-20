@@ -7,8 +7,187 @@ const STORAGE_KEY = "avia_local_plugins";
 const runningLocalPlugins = {};
 const localPluginErrors = {};
 
+const activeLocalPanels = new Set();
+let localSettingsObserver = null;
+let localSettingsFrame = null;
+let localSettingsWasOpen = false;
+let localSettingsMovedPanels = new WeakSet();
+
+const SETTINGS_SELECTOR = '[data-flx="user.user-settings-modal.modal-root"]';
+
 const getLocalPlugins = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
 const setLocalPlugins = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+
+function isLocalPanelVisible(panel) {
+    return !!(
+        panel &&
+        panel.isConnected &&
+        panel.style.display !== "none" &&
+        getComputedStyle(panel).display !== "none" &&
+        getComputedStyle(panel).visibility !== "hidden"
+    );
+}
+
+function isSettingsVisible() {
+    const modal = document.querySelector(SETTINGS_SELECTOR);
+    if (!modal) return false;
+    if (modal.getAttribute("aria-hidden") === "true") return false;
+    if (modal.hasAttribute("inert")) return false;
+
+    const style = getComputedStyle(modal);
+    return style.display !== "none" && style.visibility !== "hidden";
+}
+
+function moveLocalPanelAboveSettings(panel) {
+    if (!isLocalPanelVisible(panel) || localSettingsMovedPanels.has(panel)) return;
+
+    if (panel.parentElement !== document.body || document.body.lastElementChild !== panel) {
+        document.body.appendChild(panel);
+    }
+
+    Object.assign(panel.style, {
+        zIndex: "2147483647",
+        pointerEvents: "auto"
+    });
+
+    panel.removeAttribute("inert");
+    panel.removeAttribute("aria-hidden");
+
+    panel.querySelectorAll("[inert]").forEach(element => {
+        element.removeAttribute("inert");
+    });
+
+    localSettingsMovedPanels.add(panel);
+}
+
+function stopLocalSettingsObserver() {
+    if (localSettingsObserver) {
+        localSettingsObserver.disconnect();
+        localSettingsObserver = null;
+    }
+
+    if (localSettingsFrame !== null) {
+        cancelAnimationFrame(localSettingsFrame);
+        localSettingsFrame = null;
+    }
+
+    localSettingsWasOpen = false;
+    localSettingsMovedPanels = new WeakSet();
+}
+
+function checkLocalSettingsPanels() {
+    localSettingsFrame = null;
+
+    for (const panel of activeLocalPanels) {
+        if (!isLocalPanelVisible(panel)) {
+            activeLocalPanels.delete(panel);
+        }
+    }
+
+    if (activeLocalPanels.size === 0) {
+        stopLocalSettingsObserver();
+        return;
+    }
+
+    const settingsOpen = isSettingsVisible();
+
+    if (!settingsOpen) {
+        if (localSettingsWasOpen) {
+            localSettingsMovedPanels = new WeakSet();
+        }
+
+        localSettingsWasOpen = false;
+        return;
+    }
+
+    localSettingsWasOpen = true;
+
+    for (const panel of activeLocalPanels) {
+        if (!localSettingsMovedPanels.has(panel)) {
+            moveLocalPanelAboveSettings(panel);
+        }
+    }
+}
+
+function scheduleLocalSettingsCheck() {
+    if (localSettingsFrame !== null) return;
+    localSettingsFrame = requestAnimationFrame(checkLocalSettingsPanels);
+}
+
+function registerLocalSettingsPanel(panel) {
+    if (!panel) return;
+
+    activeLocalPanels.add(panel);
+
+    if (!localSettingsObserver) {
+        localSettingsObserver = new MutationObserver(records => {
+            let shouldCheck = false;
+
+            for (const record of records) {
+                const target = record.target.nodeType === Node.ELEMENT_NODE
+                    ? record.target
+                    : record.target.parentElement;
+
+                if (!target) continue;
+
+                if ([...activeLocalPanels].some(activePanel =>
+                    activePanel === target || activePanel.contains(target)
+                )) {
+                    continue;
+                }
+
+                if (record.type === "childList") {
+                    const changedNodes = [
+                        ...record.addedNodes,
+                        ...record.removedNodes
+                    ];
+
+                    if (changedNodes.some(node =>
+                        node.nodeType === Node.ELEMENT_NODE &&
+                        (
+                            node.matches?.(SETTINGS_SELECTOR) ||
+                            node.querySelector?.(SETTINGS_SELECTOR)
+                        )
+                    )) {
+                        shouldCheck = true;
+                        break;
+                    }
+                }
+
+                if (record.type === "attributes") {
+                    if (
+                        target.matches?.(SETTINGS_SELECTOR) ||
+                        target.closest?.(SETTINGS_SELECTOR)
+                    ) {
+                        shouldCheck = true;
+                        break;
+                    }
+                }
+            }
+
+            if (shouldCheck) scheduleLocalSettingsCheck();
+        });
+
+        localSettingsObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["aria-hidden", "inert", "class", "style"]
+        });
+    }
+
+    scheduleLocalSettingsCheck();
+}
+
+function unregisterLocalSettingsPanel(panel) {
+    if (!panel) return;
+
+    activeLocalPanels.delete(panel);
+
+    if (activeLocalPanels.size === 0) {
+        stopLocalSettingsObserver();
+    }
+}
 
 function rawUrlFromLink(link) {
     try {
@@ -21,7 +200,6 @@ function rawUrlFromLink(link) {
         if (u.hostname === "raw.githubusercontent.com") return link;
         if (u.hostname === "raw.codeberg.page") return link;
         if (u.hostname === "codeberg.org") {
-
             if (u.pathname.startsWith("/api/v1/repos/")) return link;
             const parts = u.pathname.split("/").filter(Boolean);
             if (parts.length >= 5 && (parts[2] === "raw" || parts[2] === "src")) {
@@ -331,17 +509,22 @@ function stopLocalPlugin(plugin) {
 
 async function openEditorPanel(plugin, onSave) {
     await preloadMonaco();
+
     const existing = document.getElementById("avia-local-editor-panel");
-    if (existing) existing.remove();
+    if (existing) {
+        unregisterLocalSettingsPanel(existing);
+        existing.remove();
+    }
 
     const panel = document.createElement("div");
     panel.id = "avia-local-editor-panel";
     Object.assign(panel.style, {
         position: "fixed", bottom: "24px", left: "24px", width: "680px", height: "460px",
         background: "var(--md-sys-color-surface, #1e1e1e)", borderRadius: "16px",
-        boxShadow: "0 8px 28px rgba(0,0,0,0.35)", zIndex: "9999999",
+        boxShadow: "0 8px 28px rgba(0,0,0,0.35)", zIndex: "2147483647",
         display: "flex", flexDirection: "column", overflow: "hidden",
-        border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(12px)"
+        border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(12px)",
+        pointerEvents: "auto"
     });
 
     const header = document.createElement("div");
@@ -361,7 +544,10 @@ async function openEditorPanel(plugin, onSave) {
     });
     closeBtn.onmouseenter = () => closeBtn.style.opacity = "1";
     closeBtn.onmouseleave = () => closeBtn.style.opacity = "0.7";
-    closeBtn.onclick = () => panel.remove();
+    closeBtn.onclick = () => {
+        unregisterLocalSettingsPanel(panel);
+        panel.remove();
+    };
 
     const toolbar = document.createElement("div");
     Object.assign(toolbar.style, {
@@ -388,6 +574,8 @@ async function openEditorPanel(plugin, onSave) {
     panel.appendChild(toolbar);
     panel.appendChild(editorContainer);
     document.body.appendChild(panel);
+
+    registerLocalSettingsPanel(panel);
 
     const editor = monaco.editor.create(editorContainer, {
         value: plugin.code || "", language: "javascript", theme: "vs-dark",
@@ -440,9 +628,16 @@ function enableEditorDrag(panel, handle) {
 
 function toggleLocalPanel() {
     let panel = document.getElementById("avia-local-plugins-panel");
+
     if (panel) {
-        if (panel.style.display === "none") { panel.style.display = "flex"; renderLocalPanel(); }
-        else panel.style.display = "none";
+        if (panel.style.display === "none") {
+            panel.style.display = "flex";
+            registerLocalSettingsPanel(panel);
+            renderLocalPanel();
+        } else {
+            panel.style.display = "none";
+            unregisterLocalSettingsPanel(panel);
+        }
         return;
     }
 
@@ -451,9 +646,10 @@ function toggleLocalPanel() {
     Object.assign(panel.style, {
         position: "fixed", bottom: "24px", right: "560px", width: "560px", height: "520px",
         background: "var(--md-sys-color-surface, #1e1e1e)", color: "var(--md-sys-color-on-surface, #fff)",
-        borderRadius: "16px", boxShadow: "0 8px 28px rgba(0,0,0,0.35)", zIndex: "999999",
+        borderRadius: "16px", boxShadow: "0 8px 28px rgba(0,0,0,0.35)", zIndex: "2147483647",
         display: "flex", flexDirection: "column", overflow: "hidden",
-        border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(12px)"
+        border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(12px)",
+        pointerEvents: "auto"
     });
 
     const header = document.createElement("div");
@@ -472,7 +668,10 @@ function toggleLocalPanel() {
     Object.assign(closeBtn.style, { cursor: "pointer", opacity: "0.7", fontSize: "15px", lineHeight: "1", padding: "2px 4px" });
     closeBtn.onmouseenter = () => closeBtn.style.opacity = "1";
     closeBtn.onmouseleave = () => closeBtn.style.opacity = "0.7";
-    closeBtn.onclick = () => panel.style.display = "none";
+    closeBtn.onclick = () => {
+        panel.style.display = "none";
+        unregisterLocalSettingsPanel(panel);
+    };
 
     header.appendChild(headerTitle);
     header.appendChild(closeBtn);
@@ -573,6 +772,8 @@ function toggleLocalPanel() {
     });
     panel.appendChild(dropOverlay);
     document.body.appendChild(panel);
+
+    registerLocalSettingsPanel(panel);
 
     let dragDepth = 0;
     panel.addEventListener("dragenter", e => { e.preventDefault(); e.stopPropagation(); dragDepth++; dropOverlay.style.opacity = "1"; panel.style.border = "1px dashed rgba(255,255,255,0.4)"; });
@@ -743,7 +944,10 @@ function renderLocalPanel(filter = "") {
         removeBtn.onclick = () => {
             stopLocalPlugin(plugin);
             const editorPanel = document.getElementById("avia-local-editor-panel");
-            if (editorPanel) editorPanel.remove();
+            if (editorPanel) {
+                unregisterLocalSettingsPanel(editorPanel);
+                editorPanel.remove();
+            }
             const all = getLocalPlugins();
             all.splice(all.findIndex(p => p.id === plugin.id), 1);
             setLocalPlugins(all);
