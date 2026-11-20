@@ -615,7 +615,7 @@ function renderLocalPanel(filter = "") {
 
     if (visible.length === 0) {
         const empty = document.createElement("div");
-        empty.textContent = plugins.length === 0 ? "No local plugins yet. Add one above." : "No plugins match your search.";
+        empty.textContent = plugins.length === 0 ? "No plugins yet. Add one above." : "No plugins match your search.";
         Object.assign(empty.style, { opacity: "0.4", fontSize: "13px", textAlign: "center", padding: "24px 0" });
         content.appendChild(empty);
         return;
