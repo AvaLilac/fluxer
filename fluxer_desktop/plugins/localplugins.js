@@ -781,13 +781,13 @@ function styleLocalBtn(btn, bg) {
 }
 
 function registerWithAviaMenu() {
-    const reg = () => window.AviaMenu && window.AviaMenu.register({ id: "avia_plugins_local", name: "Local Plugins", icon: "extension", onClick: toggleLocalPanel });
+    const reg = () => window.AviaMenu && window.AviaMenu.register({ id: "avia_plugins", name: "Plugins", icon: "extension", onClick: toggleLocalPanel });
     if (window.AviaMenu) reg();
     else { const iv = setInterval(() => { if (window.AviaMenu) { clearInterval(iv); reg(); } }, 100); }
 }
 
 function registerWithAviaCategory() {
-    const reg = () => window.AviaCategory && window.AviaCategory.register({ id: "avia_plugins_local", name: "Local Plugins", icon: "extension_fill", onClick: toggleLocalPanel });
+    const reg = () => window.AviaCategory && window.AviaCategory.register({ id: "avia_plugins", name: "Plugins", icon: "extension_fill", onClick: toggleLocalPanel });
     if (window.AviaCategory) reg();
     else { const iv = setInterval(() => { if (window.AviaCategory) { clearInterval(iv); reg(); } }, 100); }
 }
