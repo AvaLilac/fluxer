@@ -465,7 +465,7 @@ function toggleLocalPanel() {
     });
 
     const headerTitle = document.createElement("span");
-    headerTitle.textContent = "Local Plugins";
+    headerTitle.textContent = "Plugins";
 
     const closeBtn = document.createElement("div");
     closeBtn.textContent = "✕";
@@ -622,7 +622,7 @@ function renderLocalPanel(filter = "") {
     }
 
     const sectionLabel = document.createElement("div");
-    sectionLabel.textContent = `Local Plugins: ${visible.length}`;
+    sectionLabel.textContent = `Plugins: ${visible.length}`;
     Object.assign(sectionLabel.style, {
         fontSize: "11px", fontWeight: "700", letterSpacing: "0.06em",
         textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: "10px"
