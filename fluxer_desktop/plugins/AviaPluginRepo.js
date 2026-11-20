@@ -1,18 +1,23 @@
-(function () {
+(function() {
 
-    if (window.__AVIA_OFFICIAL_REPO_LOADED__) return;
-    window.__AVIA_OFFICIAL_REPO_LOADED__ = true;
+    if (window.__AVIA_OFFICIAL_REPO__) return;
+    window.__AVIA_OFFICIAL_REPO__ = true;
 
     const OFFICIAL_REPO_URL = "https://raw.githubusercontent.com/AvaLilac/FluxerPluginsRepo/refs/heads/main/plugins.json";
 
     let repoContent;
     let currentRepoData = [];
     let searchInput;
+    let settingsObserver = null;
+    let settingsFrame = null;
+    let settingsWasOpen = false;
+    let observedPanel = null;
 
     document.getElementById("avia-official-repo-btn")?.remove();
 
     function injectStyles() {
         if (document.getElementById("avia-repo-styles")) return;
+
         const style = document.createElement("style");
         style.id = "avia-repo-styles";
         style.textContent = `
@@ -42,6 +47,7 @@
             .avia-repo-meta { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
             .avia-repo-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.92); word-break: break-word; }
             .avia-repo-author-row { display: flex; align-items: center; gap: 6px; }
+
             .avia-repo-author-badge {
                 font-size: 10px;
                 font-weight: 500;
@@ -55,6 +61,7 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
+
             .avia-repo-desc { font-size: 11px; color: #fff; word-break: break-word; white-space: normal; line-height: 1.5; }
 
             .avia-repo-install-btn {
@@ -71,6 +78,7 @@
                 font-family: inherit;
                 white-space: nowrap;
             }
+
             .avia-repo-install-btn:hover:not(:disabled) { background: rgba(255,255,255,0.13); }
             .avia-repo-install-btn:disabled { opacity: 0.4; cursor: default; }
 
@@ -86,11 +94,14 @@
                 font-family: inherit;
                 transition: border-color 0.15s, background 0.15s;
             }
+
             .avia-repo-search::placeholder { color: rgba(255,255,255,0.3); }
+
             .avia-repo-search:focus {
                 border-color: rgba(255,255,255,0.2);
                 background: rgba(255,255,255,0.07);
             }
+
             .avia-repo-count {
                 font-size: 10px;
                 font-weight: 500;
@@ -112,10 +123,12 @@
                 color: rgba(255,255,255,0.8);
             }
         `;
+
         document.head.appendChild(style);
     }
 
     const LOCAL_STORAGE_KEY = "avia_local_plugins";
+
     const getLocalPlugins = () => JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || "[]");
     const setLocalPlugins = (data) => localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
 
@@ -129,9 +142,11 @@
 
             if (u.hostname === "github.com") {
                 const m = u.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/);
+
                 if (m) {
                     return `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}/${m[4]}`;
                 }
+
                 return link;
             }
 
@@ -140,43 +155,47 @@
             if (u.hostname === "raw.codeberg.page") return link;
 
             if (u.hostname === "codeberg.org") {
-
                 if (u.pathname.startsWith("/api/v1/repos/")) return link;
 
                 const parts = u.pathname.split("/").filter(Boolean);
 
                 if (parts.length >= 5 && (parts[2] === "raw" || parts[2] === "src")) {
-                    const user       = parts[0];
-                    const repo       = parts[1];
-                    const branchName = parts[3] === "branch" || parts[3] === "commit" || parts[3] === "tag"
-                        ? parts[4]
-                        : parts[3];
-                    const fileStart  = parts[3] === "branch" || parts[3] === "commit" || parts[3] === "tag"
-                        ? 5
-                        : 4;
-                    const filePath   = parts.slice(fileStart).join("/");
+                    const user = parts[0];
+                    const repo = parts[1];
+
+                    const branchName = parts[3] === "branch" || parts[3] === "commit" || parts[3] === "tag" ?
+                        parts[4] :
+                        parts[3];
+
+                    const fileStart = parts[3] === "branch" || parts[3] === "commit" || parts[3] === "tag" ?
+                        5 :
+                        4;
+
+                    const filePath = parts.slice(fileStart).join("/");
 
                     return `https://codeberg.org/api/v1/repos/${user}/${repo}/raw/${filePath}?ref=${branchName}`;
                 }
 
                 if (parts.length >= 4 && parts[2] === "raw") {
-                    const user       = parts[0];
-                    const repo       = parts[1];
+                    const user = parts[0];
+                    const repo = parts[1];
                     const branchName = parts[3];
-                    const filePath   = parts.slice(4).join("/");
+                    const filePath = parts.slice(4).join("/");
 
                     return `https://codeberg.org/api/v1/repos/${user}/${repo}/raw/${filePath}?ref=${branchName}`;
                 }
 
                 if (parts.length >= 5 && parts[2] === "src" && parts[3] === "branch") {
-                    const user     = parts[0];
-                    const repo     = parts[1];
-                    const branch   = parts[4];
+                    const user = parts[0];
+                    const repo = parts[1];
+                    const branch = parts[4];
                     const filePath = parts.slice(5).join("/");
+
                     return `https://codeberg.org/api/v1/repos/${user}/${repo}/raw/${filePath}?ref=${branch}`;
                 }
             }
         } catch (_) {}
+
         return link;
     }
 
@@ -188,10 +207,13 @@
 
         try {
             const res = await fetch(rawUrl);
+
             if (!res.ok) throw new Error("HTTP " + res.status);
+
             const code = await res.text();
 
             const locals = getLocalPlugins();
+
             if (locals.some(p => p.name === plugin.name)) {
                 btn.textContent = "In Local";
                 return;
@@ -203,6 +225,7 @@
                 code,
                 enabled: false
             });
+
             setLocalPlugins(locals);
 
             window.dispatchEvent(new Event("avia-local-plugin-list-changed"));
@@ -211,6 +234,7 @@
         } catch (e) {
             btn.disabled = false;
             btn.textContent = "Local ✕";
+
             setTimeout(() => {
                 btn.textContent = "Install";
                 btn.disabled = false;
@@ -220,9 +244,11 @@
 
     function updateInstallStates() {
         if (!repoContent) return;
+
         repoContent.querySelectorAll("[data-name]").forEach(card => {
             const name = card.getAttribute("data-name");
             const localBtn = card.querySelector("button.local-install-btn");
+
             if (localBtn) {
                 if (isInstalledLocally(name)) {
                     localBtn.textContent = "Installed";
@@ -237,12 +263,13 @@
 
     function renderRepo(data, filter = "") {
         if (!repoContent) return;
+
         currentRepoData = data.plugins;
         repoContent.innerHTML = "";
 
         const filtered = [...currentRepoData].filter(p =>
             (p.name + " " + (p.author || "") + " " + (p.description || ""))
-                .toLowerCase().includes(filter.toLowerCase())
+            .toLowerCase().includes(filter.toLowerCase())
         ).reverse();
 
         if (filtered.length === 0) {
@@ -271,6 +298,7 @@
             const authorBadge = document.createElement("span");
             authorBadge.className = "avia-repo-author-badge";
             authorBadge.textContent = repoPlugin.author || "Unknown";
+
             authorRow.appendChild(authorBadge);
 
             nameMeta.appendChild(name);
@@ -288,6 +316,7 @@
 
             topRow.appendChild(nameMeta);
             topRow.appendChild(btnGroup);
+
             card.appendChild(topRow);
 
             if (repoPlugin.description) {
@@ -305,13 +334,16 @@
 
     function refetchPlugins() {
         if (!repoContent) return;
+
         repoContent.innerHTML = `<div class="avia-repo-empty">Loading plugins…</div>`;
 
         function electronFetch() {
             try {
                 const https = require("https");
+
                 https.get(OFFICIAL_REPO_URL, res => {
                     let data = "";
+
                     res.on("data", chunk => data += chunk);
                     res.on("end", () => renderRepo(JSON.parse(data)));
                 }).on("error", () => {
@@ -332,10 +364,187 @@
         }
     }
 
+    function stopSettingsObserver() {
+        if (settingsObserver) {
+            settingsObserver.disconnect();
+            settingsObserver = null;
+        }
+
+        if (settingsFrame !== null) {
+            cancelAnimationFrame(settingsFrame);
+            settingsFrame = null;
+        }
+
+        settingsWasOpen = false;
+        observedPanel = null;
+    }
+
+    function startSettingsObserver(panel) {
+        if (observedPanel === panel && settingsObserver) return;
+
+        stopSettingsObserver();
+
+        const SETTINGS_SELECTOR = '[data-flx="user.user-settings-modal.modal-root"]';
+        let framePending = false;
+
+        observedPanel = panel;
+
+        function nodeContainsSettingsModal(node) {
+            if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+
+            return node.matches(SETTINGS_SELECTOR) || !!node.querySelector(SETTINGS_SELECTOR);
+        }
+
+        function checkSettingsModal() {
+            settingsFrame = null;
+            framePending = false;
+
+            if (!panel.isConnected || panel.style.display === "none") {
+                stopSettingsObserver();
+                return;
+            }
+
+            const settingsModal = document.querySelector(SETTINGS_SELECTOR);
+
+            const modalIsOpen = settingsModal &&
+                settingsModal.getAttribute("aria-hidden") !== "true" &&
+                getComputedStyle(settingsModal).display !== "none" &&
+                getComputedStyle(settingsModal).visibility !== "hidden";
+
+            if (!modalIsOpen) {
+                settingsWasOpen = false;
+                return;
+            }
+
+            if (settingsWasOpen) return;
+
+            settingsWasOpen = true;
+
+            const content = panel.querySelector("#avia-repo-content");
+            const scrollTop = content ? content.scrollTop : 0;
+            const scrollLeft = content ? content.scrollLeft : 0;
+            const activeElement = panel.contains(document.activeElement) ? document.activeElement : null;
+            const selectionStart = activeElement && typeof activeElement.selectionStart === "number" ?
+                activeElement.selectionStart :
+                null;
+            const selectionEnd = activeElement && typeof activeElement.selectionEnd === "number" ?
+                activeElement.selectionEnd :
+                null;
+
+            if (panel.parentElement !== document.body || document.body.lastElementChild !== panel) {
+                document.body.appendChild(panel);
+            }
+
+            panel.removeAttribute("inert");
+            panel.inert = false;
+
+            if (panel.getAttribute("aria-hidden") === "true") {
+                panel.removeAttribute("aria-hidden");
+            }
+
+            panel.style.zIndex = "2147483647";
+            panel.style.pointerEvents = "auto";
+
+            panel.querySelectorAll("input, button, textarea, select").forEach(element => {
+                element.removeAttribute("inert");
+                element.inert = false;
+            });
+
+            if (content) {
+                content.scrollTop = scrollTop;
+                content.scrollLeft = scrollLeft;
+
+                requestAnimationFrame(() => {
+                    if (!content.isConnected || panel.style.display === "none") return;
+
+                    content.scrollTop = scrollTop;
+                    content.scrollLeft = scrollLeft;
+
+                    if (activeElement && activeElement.isConnected) {
+                        activeElement.focus({
+                            preventScroll: true
+                        });
+
+                        if (selectionStart !== null && selectionEnd !== null) {
+                            activeElement.setSelectionRange(selectionStart, selectionEnd);
+                        }
+                    }
+                });
+            }
+        }
+
+        function scheduleCheck() {
+            if (framePending) return;
+
+            framePending = true;
+            settingsFrame = requestAnimationFrame(checkSettingsModal);
+        }
+
+        settingsObserver = new MutationObserver(records => {
+            if (!panel.isConnected || panel.style.display === "none") {
+                stopSettingsObserver();
+                return;
+            }
+
+            const relevantChange = records.some(record => {
+                if (record.target === panel || panel.contains(record.target)) {
+                    return false;
+                }
+
+                if (record.type === "childList") {
+                    const changedNodes = [
+                        ...record.addedNodes,
+                        ...record.removedNodes
+                    ];
+
+                    return changedNodes.some(node => {
+                        if (node === panel || panel.contains(node)) return false;
+                        return nodeContainsSettingsModal(node);
+                    });
+                }
+
+                if (record.type === "attributes") {
+                    const target = record.target;
+
+                    return target.nodeType === Node.ELEMENT_NODE &&
+                        (
+                            target.matches(SETTINGS_SELECTOR) ||
+                            !!target.closest(SETTINGS_SELECTOR)
+                        );
+                }
+
+                return false;
+            });
+
+            if (relevantChange) {
+                scheduleCheck();
+            }
+        });
+
+        settingsObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["aria-hidden", "inert", "class", "style"]
+        });
+
+        scheduleCheck();
+    }
+
     function openWindow() {
         let panel = document.getElementById("avia-official-repo-window");
+
         if (panel) {
-            panel.style.display = panel.style.display === "none" ? "flex" : "none";
+            const isHidden = panel.style.display === "none";
+
+            panel.style.display = isHidden ? "flex" : "none";
+
+            if (isHidden) {
+                startSettingsObserver(panel);
+            } else {
+                stopSettingsObserver();
+            }
+
             return;
         }
 
@@ -343,6 +552,7 @@
 
         panel = document.createElement("div");
         panel.id = "avia-official-repo-window";
+
         Object.assign(panel.style, {
             position: "fixed",
             bottom: "24px",
@@ -353,15 +563,17 @@
             color: "var(--md-sys-color-on-surface, #fff)",
             borderRadius: "16px",
             boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
-            zIndex: "999999",
+            zIndex: "2147483647",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
             border: "1px solid rgba(255,255,255,0.08)",
-            backdropFilter: "blur(12px)"
+            backdropFilter: "blur(12px)",
+            pointerEvents: "auto"
         });
 
         const header = document.createElement("div");
+
         Object.assign(header.style, {
             padding: "13px 16px",
             fontWeight: "600",
@@ -374,10 +586,12 @@
             userSelect: "none",
             flexShrink: "0"
         });
+
         header.textContent = "Plugins Repo";
 
         const close = document.createElement("div");
         close.textContent = "✕";
+
         Object.assign(close.style, {
             position: "absolute",
             right: "14px",
@@ -388,34 +602,50 @@
             fontSize: "13px",
             lineHeight: "1"
         });
+
         close.onmouseenter = () => close.style.opacity = "1";
         close.onmouseleave = () => close.style.opacity = "0.5";
-        close.onclick = () => panel.style.display = "none";
+        close.onclick = () => {
+            panel.style.display = "none";
+            stopSettingsObserver();
+        };
+
         header.appendChild(close);
 
-        let isDragging = false, offsetX = 0, offsetY = 0;
+        let isDragging = false;
+        let offsetX = 0;
+        let offsetY = 0;
+
         header.addEventListener("mousedown", e => {
             isDragging = true;
+
             const rect = panel.getBoundingClientRect();
+
             offsetX = e.clientX - rect.left;
             offsetY = e.clientY - rect.top;
+
             panel.style.bottom = "auto";
             panel.style.right = "auto";
             panel.style.left = rect.left + "px";
             panel.style.top = rect.top + "px";
+
             document.body.style.userSelect = "none";
         });
+
         document.addEventListener("mousemove", e => {
             if (!isDragging) return;
+
             panel.style.left = e.clientX - offsetX + "px";
             panel.style.top = e.clientY - offsetY + "px";
         });
+
         document.addEventListener("mouseup", () => {
             isDragging = false;
             document.body.style.userSelect = "";
         });
 
         const searchWrap = document.createElement("div");
+
         Object.assign(searchWrap.style, {
             padding: "10px 12px",
             flexShrink: "0",
@@ -425,14 +655,18 @@
         searchInput = document.createElement("input");
         searchInput.className = "avia-repo-search";
         searchInput.placeholder = "Search plugins or authors or descriptions…";
+
         searchInput.addEventListener("input", () => {
-            renderRepo({ plugins: currentRepoData }, searchInput.value);
+            renderRepo({
+                plugins: currentRepoData
+            }, searchInput.value);
         });
 
         searchWrap.appendChild(searchInput);
 
         repoContent = document.createElement("div");
         repoContent.id = "avia-repo-content";
+
         Object.assign(repoContent.style, {
             flex: "1",
             overflowY: "auto",
@@ -443,19 +677,32 @@
         panel.appendChild(header);
         panel.appendChild(searchWrap);
         panel.appendChild(repoContent);
+
         document.body.appendChild(panel);
 
         refetchPlugins();
+        startSettingsObserver(panel);
     }
 
     function registerWithAviaCategory() {
         if (window.AviaCategory) {
-            window.AviaCategory.register({ id: "avia_official_repo", name: "Plugins Repo", icon: "palette", onClick: openWindow });
+            window.AviaCategory.register({
+                id: "avia_official_repo",
+                name: "Plugins Repo",
+                icon: "palette",
+                onClick: openWindow
+            });
         } else {
             const interval = setInterval(() => {
                 if (window.AviaCategory) {
                     clearInterval(interval);
-                    window.AviaCategory.register({ id: "avia_official_repo", name: "Plugins Repo", icon: "palette", onClick: openWindow });
+
+                    window.AviaCategory.register({
+                        id: "avia_official_repo",
+                        name: "Plugins Repo",
+                        icon: "palette",
+                        onClick: openWindow
+                    });
                 }
             }, 100);
         }
@@ -463,19 +710,32 @@
 
     function registerWithAviaMenu() {
         if (window.AviaMenu) {
-            window.AviaMenu.register({ id: "avia_official_repo", name: "Plugins Repo", icon: "palette", onClick: openWindow });
+            window.AviaMenu.register({
+                id: "avia_official_repo",
+                name: "Plugins Repo",
+                icon: "palette",
+                onClick: openWindow
+            });
         } else {
             const interval = setInterval(() => {
                 if (window.AviaMenu) {
                     clearInterval(interval);
-                    window.AviaMenu.register({ id: "avia_official_repo", name: "Plugins Repo", icon: "palette", onClick: openWindow });
+
+                    window.AviaMenu.register({
+                        id: "avia_official_repo",
+                        name: "Plugins Repo",
+                        icon: "palette",
+                        onClick: openWindow
+                    });
                 }
             }, 100);
         }
     }
 
     window.addEventListener("avia-local-plugin-list-changed", () => {
-        if (document.getElementById("avia-official-repo-window")) updateInstallStates();
+        if (document.getElementById("avia-official-repo-window")) {
+            updateInstallStates();
+        }
     });
 
     registerWithAviaCategory();
