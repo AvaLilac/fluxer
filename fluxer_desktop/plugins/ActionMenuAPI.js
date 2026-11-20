@@ -180,6 +180,7 @@
     function buildButton(item, template) {
         const button = template.cloneNode(true);
 
+        button.removeAttribute("hidden");
         button.removeAttribute("id");
         button.removeAttribute("disabled");
         button.removeAttribute("data-action");
