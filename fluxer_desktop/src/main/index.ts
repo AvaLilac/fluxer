@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import fs from 'node:fs';
@@ -184,9 +183,7 @@ const AVIA_PLUGINS: string[] = [
 	'ToolbarAPI.js',
 	'ActionMenuAPI.js',
 	'FontLoader.js',
-	'OnlinePlugins.js',
 	'localplugins.js',
-	'ThemesManager.js',
 	'AviaPluginRepo.js',
 ];
 
