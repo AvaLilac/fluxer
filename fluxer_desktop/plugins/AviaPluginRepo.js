@@ -3,11 +3,7 @@
     if (window.__AVIA_OFFICIAL_REPO_LOADED__) return;
     window.__AVIA_OFFICIAL_REPO_LOADED__ = true;
 
-    const STORAGE_KEY = "avia_plugins";
     const OFFICIAL_REPO_URL = "https://raw.githubusercontent.com/AvaLilac/FluxerPluginsRepo/refs/heads/main/plugins.json";
-
-    const getPlugins = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    const setPlugins = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 
     let repoContent;
     let currentRepoData = [];
@@ -119,14 +115,6 @@
         document.head.appendChild(style);
     }
 
-    function triggerManagerRefresh() {
-        const panel = document.getElementById("avia-plugins-panel");
-        if (!panel) return;
-        const refreshBtn = Array.from(panel.querySelectorAll("button"))
-            .find(b => b.textContent.trim() === "Refresh");
-        if (refreshBtn) refreshBtn.click();
-    }
-
     const LOCAL_STORAGE_KEY = "avia_local_plugins";
     const getLocalPlugins = () => JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || "[]");
     const setLocalPlugins = (data) => localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
@@ -219,12 +207,12 @@
 
             window.dispatchEvent(new Event("avia-local-plugin-list-changed"));
 
-            btn.textContent = "In Local";
+            btn.textContent = "Installed";
         } catch (e) {
             btn.disabled = false;
             btn.textContent = "Local ✕";
             setTimeout(() => {
-                btn.textContent = "Install to local";
+                btn.textContent = "Install";
                 btn.disabled = false;
             }, 2000);
         }
@@ -232,27 +220,15 @@
 
     function updateInstallStates() {
         if (!repoContent) return;
-        const installed = getPlugins().map(p => p.url);
-        repoContent.querySelectorAll("[data-link]").forEach(card => {
-            const link = card.getAttribute("data-link");
+        repoContent.querySelectorAll("[data-name]").forEach(card => {
             const name = card.getAttribute("data-name");
-            const btn = card.querySelector("button.install-btn");
             const localBtn = card.querySelector("button.local-install-btn");
-            if (btn) {
-                if (installed.includes(link)) {
-                    btn.textContent = "Installed";
-                    btn.disabled = true;
-                } else {
-                    btn.textContent = "Install";
-                    btn.disabled = false;
-                }
-            }
             if (localBtn) {
                 if (isInstalledLocally(name)) {
-                    localBtn.textContent = "In Local";
+                    localBtn.textContent = "Installed";
                     localBtn.disabled = true;
                 } else {
-                    localBtn.textContent = "Install to local";
+                    localBtn.textContent = "Install";
                     localBtn.disabled = false;
                 }
             }
@@ -277,7 +253,6 @@
         filtered.forEach(repoPlugin => {
             const card = document.createElement("div");
             card.className = "avia-repo-plugin-card";
-            card.setAttribute("data-link", repoPlugin.link);
             card.setAttribute("data-name", repoPlugin.name);
 
             const topRow = document.createElement("div");
@@ -306,24 +281,10 @@
 
             const localBtn = document.createElement("button");
             localBtn.className = "avia-repo-install-btn local-install-btn";
-            localBtn.textContent = "Install to local";
+            localBtn.textContent = "Install";
             localBtn.onclick = () => installToLocal(repoPlugin, localBtn);
 
-            const installBtn = document.createElement("button");
-            installBtn.className = "avia-repo-install-btn install-btn";
-            installBtn.onclick = () => {
-                const plugins = getPlugins();
-                if (!plugins.some(p => p.url === repoPlugin.link)) {
-                    plugins.push({ name: repoPlugin.name, url: repoPlugin.link, enabled: false });
-                    setPlugins(plugins);
-                    window.dispatchEvent(new Event("avia-plugin-list-changed"));
-                    triggerManagerRefresh();
-                    renderRepo({ plugins: currentRepoData }, searchInput.value);
-                }
-            };
-
             btnGroup.appendChild(localBtn);
-            btnGroup.appendChild(installBtn);
 
             topRow.appendChild(nameMeta);
             topRow.appendChild(btnGroup);
@@ -513,17 +474,11 @@
         }
     }
 
-    window.addEventListener("avia-plugin-list-changed", () => {
-        if (document.getElementById("avia-official-repo-window")) updateInstallStates();
-    });
-
     window.addEventListener("avia-local-plugin-list-changed", () => {
         if (document.getElementById("avia-official-repo-window")) updateInstallStates();
     });
 
-
     registerWithAviaCategory();
     registerWithAviaMenu();
-
 
 })();
