@@ -612,13 +612,8 @@
             host,
             footer
         } = createLpModal(title, message);
-
-        const closeBtn = createLpButton("Close", "primary", closeLpModal);
-        footer.appendChild(closeBtn);
-
-        closeBtn.focus();
-        host.shadowRoot.querySelector(".close").blur();
-        closeBtn.focus();
+        footer.remove();
+        host.shadowRoot.querySelector(".close").focus();
     }
 
     function showUpdateModal(pluginName, localVersion, remoteVersion, wasRunning, onAccept) {
