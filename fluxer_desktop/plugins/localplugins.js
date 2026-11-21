@@ -618,6 +618,7 @@
 
     function showUpdateModal(pluginName, localVersion, remoteVersion, wasRunning, onAccept) {
         const {
+            host,
             body,
             footer
         } = createLpModal("Update Available");
@@ -633,16 +634,14 @@
             "Any local changes you made to this plugin will be overwritten.";
         body.appendChild(warningEl);
 
-        const cancelBtn = createLpButton("Cancel", "secondary", closeLpModal);
         const updateBtn = createLpButton("Update", "primary", () => {
             closeLpModal();
             onAccept();
         });
 
-        footer.appendChild(cancelBtn);
         footer.appendChild(updateBtn);
 
-        cancelBtn.focus();
+        host.shadowRoot.querySelector(".close").focus();
     }
 
     async function checkPluginUpdate(plugin, updateBtn) {
