@@ -19,6 +19,7 @@ import fluxer_gateway/gateway/limits
 import fluxer_gateway/guild/handoff/signal as guild_signal
 import fluxer_gateway/presence/handoff/signal as presence_signal
 import fluxer_gateway/presence/protocol
+import fluxer_gateway/session/arrival_log
 import fluxer_gateway/session/calls
 import fluxer_gateway/session/control.{type Control}
 import fluxer_gateway/session/departure
@@ -35,6 +36,7 @@ import fluxer_gateway/session/reactions
 import fluxer_gateway/session/readiness.{type Outcome, Continue, Stop}
 import fluxer_gateway/session/replay_buffer
 import fluxer_gateway/session/seed.{type Seed, Seed}
+import fluxer_gateway/session/session_metrics
 import fluxer_gateway/session/state.{
   type Arrival, type Held, type Internal, type State, ArrivalExpired, Arriving,
   Attached, CallReconnect, ConnectGuild, Detached, EnablePresenceUpdates,
@@ -123,7 +125,10 @@ fn init(start: Start) -> actor.Initialised(State, Message, SessionRef) {
   let now = st.now_ms()
   let socket = case start.socket {
     Some(socket) -> Attached(socket, process.monitor(socket.pid))
-    None -> Detached(1)
+    None -> {
+      session_metrics.detach(process.self())
+      Detached(1)
+    }
   }
   let state =
     State(
@@ -203,9 +208,11 @@ fn init(start: Start) -> actor.Initialised(State, Message, SessionRef) {
   })
   case seed.transferred {
     True -> {
-      let rejoining = list.length(seed.guilds) - list.length(adopted)
-      rebinds("guild", "fallback", rejoining)
-      fallbacks("guild", "not_adopted", rejoining)
+      let expected = handed_over(seed)
+      let missing = expected - list.length(adopted)
+      rebinds("guild", "fallback", missing)
+      fallbacks("guild", "not_adopted", missing)
+      report_rejoining(seed, expected, list.length(adopted))
       case presence_link.is_linked(state) {
         True -> Nil
         False -> {
@@ -276,6 +283,46 @@ fn arrive(state: State, moved: Option(seed.Moved)) -> #(State, List(GuildId)) {
 fn source_pid(source: SessionRef) -> Option(process.Pid) {
   process.subject_owner(source.inbox) |> option.from_result
 }
+
+fn handed_over(seed: Seed) -> Int {
+  case seed.moved {
+    Some(moved) -> list.length(moved.linked)
+    None -> list.length(seed.guilds)
+  }
+}
+
+fn report_rejoining(seed: Seed, expected: Int, adopted: Int) -> Nil {
+  let guilds = list.length(seed.guilds)
+  case
+    arrival_log.classify(
+      guilds:,
+      expected:,
+      adopted:,
+      moved: option.is_some(seed.moved),
+    )
+  {
+    Error(Nil) -> Nil
+    Ok(reason) ->
+      arrival_log.warn(arrival_log.Arrival(
+        session_id: session.session_id_to_string(seed.id),
+        source_node: source_node(seed.moved),
+        guilds:,
+        expected:,
+        adopted:,
+        reason:,
+      ))
+  }
+}
+
+fn source_node(moved: Option(seed.Moved)) -> String {
+  case option.then(moved, fn(found) { source_pid(found.source) }) {
+    Some(pid) -> atom.to_string(pid_node(pid))
+    None -> "unknown"
+  }
+}
+
+@external(erlang, "erlang", "node")
+fn pid_node(pid: process.Pid) -> Atom
 
 fn announce(
   me: SessionRef,
@@ -709,7 +756,7 @@ fn attach(state: State, socket: SocketRef) -> State {
         }
       }
     }
-    Detached(_) -> Nil
+    Detached(_) -> session_metrics.attach(process.self())
   }
   State(
     ..state,
@@ -764,6 +811,7 @@ fn replay_after_attach(state: State, seq: Int, timing: Timing) -> State {
       "RESUMED",
       resumed_payload(state, timing, replay_started_us),
     )
+  session_metrics.replayed(session_metrics.ResumeReplay, list.length(missed))
   let frames = list.append(missed, [resumed])
   case list.length(frames) > max_inline_replay {
     True ->
@@ -797,6 +845,7 @@ fn resumed_payload(
 }
 
 fn hold_for_resume(state: State) -> State {
+  session_metrics.detach(process.self())
   let generation = state.generation + 1
   st.schedule(state, limits.resume_timeout_ms(), ResumeExpired(generation))
   st.schedule(state, offline_grace_ms(), OfflineGrace(generation))
@@ -943,9 +992,15 @@ fn reattach(state: State, socket: SocketRef, seq: Int) -> State {
           st.send_frames(state, [ReconnectFrame])
         }
         False -> {
-          list.map(replay_buffer.after(state.replay, seq), fn(entry) {
-            DispatchFrame(entry.seq, entry.event, entry.payload)
-          })
+          let missed =
+            list.map(replay_buffer.after(state.replay, seq), fn(entry) {
+              DispatchFrame(entry.seq, entry.event, entry.payload)
+            })
+          session_metrics.replayed(
+            session_metrics.ReattachReplay,
+            list.length(missed),
+          )
+          missed
           |> list.sized_chunk(max_inline_replay)
           |> list.each(st.send_frames(state, _))
           process.send(socket.outbox, session.Reattached(state.id))
