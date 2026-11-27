@@ -1,4 +1,4 @@
-(function () {
+(function() {
 
     if (window.__AVIA_CATEGORY_FLUXER__) return;
     window.__AVIA_CATEGORY_FLUXER__ = true;
@@ -107,15 +107,35 @@
         );
 
         if (icon) {
-            if (item.icon) {
+            if (item.svg) {
+
+                const svgEl =
+                    icon.tagName.toLowerCase() === "svg" ?
+                    icon :
+                    icon.querySelector("svg") || icon;
+
+                if (item.viewBox) {
+                    svgEl.setAttribute("viewBox", item.viewBox);
+                }
+
+                const path = svgEl.querySelector("path");
+
+                if (path) {
+                    path.setAttribute("d", item.svg);
+
+                    svgEl.querySelectorAll("path").forEach(extra => {
+                        if (extra !== path) extra.remove();
+                    });
+                }
+            } else if (item.icon) {
                 const filled = item.icon.endsWith("_fill");
 
                 const iconSpan = document.createElement("span");
 
                 iconSpan.className = "material-symbols-outlined";
-                iconSpan.textContent = filled
-                    ? item.icon.slice(0, -5)
-                    : item.icon;
+                iconSpan.textContent = filled ?
+                    item.icon.slice(0, -5) :
+                    item.icon;
 
                 iconSpan.style.cssText =
                     "flex-shrink:0;display:block;" +
@@ -175,6 +195,12 @@
         }
     }
 
+    function cleanString(value) {
+        return typeof value === "string" && value.trim() ?
+            value.trim() :
+            null;
+    }
+
     window.AviaCategory = {
         register(item) {
             if (!item || typeof item !== "object") {
@@ -222,10 +248,9 @@
             categoryRegisteredItems.push({
                 id,
                 name: item.name,
-                icon:
-                    typeof item.icon === "string" && item.icon.trim()
-                        ? item.icon.trim()
-                        : null,
+                icon: cleanString(item.icon),
+                svg: cleanString(item.svg),
+                viewBox: cleanString(item.viewBox),
                 onClick: item.onClick
             });
 
