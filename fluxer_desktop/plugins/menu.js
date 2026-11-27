@@ -15,13 +15,14 @@
         }
     })();
 
-    if (window.__AVIA_MENU_Fluxer__) return;
-    window.__AVIA_MENU_Fluxer__ = true;
+    if (window.__AVIA_MENU__) return;
+    window.__AVIA_MENU__ = true;
 
     const ITEM_HEIGHT = 32;
     const MAX_VISIBLE = 12;
     const SUBMENU_MAX_VISIBLE = 8;
     const PIN_STORAGE_KEY = "avia_menu_pins";
+    const SVG_NS = "http://www.w3.org/2000/svg";
 
     const registeredItems = [];
     const submenuParents = [];
@@ -51,6 +52,40 @@
     }
 
     injectMaterial3Support();
+
+    function cleanString(value) {
+        return typeof value === "string" && value.trim()
+            ? value.trim()
+            : null;
+    }
+
+    function createIconEl(entry) {
+        if (entry.svg) {
+            const svgEl = document.createElementNS(SVG_NS, "svg");
+            svgEl.setAttribute("viewBox", entry.viewBox || "0 0 24 24");
+            svgEl.setAttribute("width", "20");
+            svgEl.setAttribute("height", "20");
+            svgEl.setAttribute("fill", "currentColor");
+            svgEl.setAttribute("aria-hidden", "true");
+            svgEl.style.cssText = "display:block;flex-shrink:0;opacity:0.85;";
+
+            const path = document.createElementNS(SVG_NS, "path");
+            path.setAttribute("d", entry.svg);
+            svgEl.appendChild(path);
+
+            return svgEl;
+        }
+
+        if (entry.icon) {
+            const iconEl = document.createElement("span");
+            iconEl.className = "material-symbols-outlined";
+            iconEl.textContent = entry.icon;
+            iconEl.style.cssText = "font-size:20px;display:block;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0;flex-shrink:0;opacity:0.85;";
+            return iconEl;
+        }
+
+        return null;
+    }
 
     function allIds() {
         return [
@@ -116,7 +151,9 @@
                 id: item.id.trim(),
                 name: item.name,
                 onClick: item.onClick,
-                icon: typeof item.icon === "string" && item.icon.trim() ? item.icon.trim() : null
+                icon: cleanString(item.icon),
+                svg: cleanString(item.svg),
+                viewBox: cleanString(item.viewBox)
             });
             if (menuEl) rebuildMenu();
         },
@@ -137,7 +174,9 @@
             submenuParents.push({
                 id: item.id.trim(),
                 name: item.name,
-                icon: typeof item.icon === "string" && item.icon.trim() ? item.icon.trim() : null
+                icon: cleanString(item.icon),
+                svg: cleanString(item.svg),
+                viewBox: cleanString(item.viewBox)
             });
             if (menuEl) rebuildMenu();
         },
@@ -169,7 +208,9 @@
                 id: item.id.trim(),
                 name: item.name,
                 onClick: item.onClick,
-                icon: typeof item.icon === "string" && item.icon.trim() ? item.icon.trim() : null
+                icon: cleanString(item.icon),
+                svg: cleanString(item.svg),
+                viewBox: cleanString(item.viewBox)
             });
             if (menuEl) rebuildMenu();
         },
@@ -191,12 +232,25 @@
             if (typeof item.text === "string" && item.text.trim()) {
                 entry.name = item.text.trim();
             }
-            if (typeof item.icon === "string") {
-                entry.icon = item.icon.trim() || null;
+            if ("icon" in item) {
+                entry.icon = cleanString(item.icon);
+                if (entry.icon) entry.svg = null;
+            }
+            if ("svg" in item) {
+                entry.svg = cleanString(item.svg);
+                if (entry.svg) entry.icon = null;
+            }
+
+            if ("viewBox" in item) {
+                entry.viewBox = cleanString(item.viewBox);
             }
             if (activeSubmenuEl && activeSubmenuParentBtn) {
                 const parentEntry = submenuParents.find(p => p.id === item.parent.trim());
-                if (parentEntry) openSubmenu(parentEntry, activeSubmenuParentBtn);
+                if (parentEntry) {
+                    const anchor = activeSubmenuParentBtn;
+                    closeSubmenu();
+                    openSubmenu(parentEntry, anchor);
+                }
             }
         },
 
@@ -315,13 +369,8 @@
                 flexShrink: "0"
             });
 
-            if (subItem.icon) {
-                const iconEl = document.createElement("span");
-                iconEl.className = "material-symbols-outlined";
-                iconEl.textContent = subItem.icon;
-                iconEl.style.cssText = "font-size:20px;display:block;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0;flex-shrink:0;opacity:0.85;";
-                btn.appendChild(iconEl);
-            }
+            const iconEl = createIconEl(subItem);
+            if (iconEl) btn.appendChild(iconEl);
 
             const label = document.createElement("span");
             label.textContent = subItem.name;
@@ -450,13 +499,8 @@
                 position: "relative"
             });
 
-            if (item.icon) {
-                const iconEl = document.createElement("span");
-                iconEl.className = "material-symbols-outlined";
-                iconEl.textContent = item.icon;
-                iconEl.style.cssText = "font-size:20px;display:block;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0;flex-shrink:0;opacity:0.85;";
-                btn.appendChild(iconEl);
-            }
+            const iconEl = createIconEl(item);
+            if (iconEl) btn.appendChild(iconEl);
 
             const label = document.createElement("span");
             label.textContent = item.name;
